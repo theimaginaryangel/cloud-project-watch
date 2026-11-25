@@ -128,7 +128,7 @@ export function DashboardView() {
           <div className="flex items-center gap-3 min-w-0">
             <Bell className="size-4 text-muted-foreground shrink-0" />
             <p className="text-sm text-foreground truncate">
-              <span className="font-medium tabular-money">
+              <span className="font-medium tabular-money text-savings">
                 {formatCentsUsd(totalSavingsCents)}/mo
               </span>{" "}
               <span className="text-muted-foreground">
@@ -283,10 +283,22 @@ export function DashboardView() {
 
                   <div className="flex items-center gap-4 shrink-0">
                     <div className="text-right flex flex-col gap-0.5">
-                      <span className="text-base font-semibold font-mono tabular-money">
+                      <span
+                        className={
+                          project.isOrphaned && project.monthlyCents > 0
+                            ? "text-base font-semibold font-mono tabular-money text-alert"
+                            : "text-base font-semibold font-mono tabular-money"
+                        }
+                      >
                         {formatCentsUsd(project.monthlyCents)}
                       </span>
-                      <span className="text-xs text-muted-foreground tabular-money">
+                      <span
+                        className={
+                          project.potentialSavingsCents > 0
+                            ? "text-xs tabular-money text-savings"
+                            : "text-xs text-muted-foreground tabular-money"
+                        }
+                      >
                         {project.potentialSavingsCents > 0
                           ? `Save ${formatCentsUsd(project.potentialSavingsCents)}`
                           : "No waste"}
@@ -325,7 +337,13 @@ export function DashboardView() {
                 className="flex items-center justify-between gap-6 px-6 py-4 transition-colors hover:bg-secondary/60"
               >
                 <div className="min-w-0 flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground truncate">
+                  <span
+                    className={
+                      item.ruleCode === "RDS_7DAY_AUTORESTART"
+                        ? "text-sm font-medium text-alert truncate"
+                        : "text-sm font-medium text-foreground truncate"
+                    }
+                  >
                     {item.title}
                   </span>
                   <span className="text-xs text-muted-foreground truncate">
@@ -333,7 +351,7 @@ export function DashboardView() {
                   </span>
                 </div>
                 {item.estimatedMonthlySavingsCents > 0 ? (
-                  <span className="shrink-0 text-xs font-mono tabular-money text-muted-foreground">
+                  <span className="shrink-0 text-xs font-mono tabular-money text-savings">
                     -{formatCentsUsd(item.estimatedMonthlySavingsCents)}/mo
                   </span>
                 ) : null}

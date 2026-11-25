@@ -183,7 +183,13 @@ export function ZombiesView() {
                       </div>
 
                       <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-sm font-mono tabular-money font-medium">
+                        <span
+                          className={
+                            r.monthlyCents > 0
+                              ? "text-sm font-mono tabular-money font-medium text-alert"
+                              : "text-sm font-mono tabular-money font-medium"
+                          }
+                        >
                           {formatCentsUsd(r.monthlyCents)}/mo
                         </span>
                         <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -254,7 +260,13 @@ export function ZombiesView() {
                   <details key={f.id} className="group">
                     <summary className="list-none cursor-pointer px-6 py-4 flex items-center justify-between gap-4 hover:bg-secondary/50 transition-colors">
                       <div className="min-w-0 flex flex-col gap-0.5">
-                        <span className="text-sm font-medium text-foreground">
+                        <span
+                          className={
+                            f.ruleCode === "RDS_7DAY_AUTORESTART"
+                              ? "text-sm font-medium text-alert"
+                              : "text-sm font-medium text-foreground"
+                          }
+                        >
                           {f.title}
                         </span>
                         <span className="text-xs text-muted-foreground truncate">
@@ -264,7 +276,7 @@ export function ZombiesView() {
 
                       <div className="flex items-center gap-3 shrink-0">
                         {f.estimatedMonthlySavingsCents > 0 ? (
-                          <span className="text-xs font-mono tabular-money text-muted-foreground">
+                          <span className="text-xs font-mono tabular-money text-savings">
                             -{formatCentsUsd(f.estimatedMonthlySavingsCents)}/mo
                           </span>
                         ) : null}

@@ -202,7 +202,13 @@ export function ProjectDetailView({ slug }: { slug: string }) {
             </div>
             <div className="flex flex-col">
               <span className="text-xs text-muted-foreground">Possible savings</span>
-              <span className="text-2xl font-semibold font-mono tabular-money text-muted-foreground">
+              <span
+                className={
+                  data.project.potentialSavingsCents > 0
+                    ? "text-2xl font-semibold font-mono tabular-money text-savings"
+                    : "text-2xl font-semibold font-mono tabular-money text-muted-foreground"
+                }
+              >
                 {formatCentsUsd(data.project.potentialSavingsCents)}
               </span>
             </div>
@@ -278,7 +284,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
                   {aiResult.plan.summary}
                 </p>
                 <div className="shrink-0 text-left sm:text-right">
-                  <div className="text-lg font-semibold font-mono tabular-money">
+                  <div className="text-lg font-semibold font-mono tabular-money text-savings">
                     -{formatCentsUsd(aiResult.plan.totalEstimatedMonthlySavingsCents)}/mo
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -314,7 +320,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-sm font-mono tabular-money font-medium">
+                        <span className="text-sm font-mono tabular-money font-medium text-savings">
                           -{formatCentsUsd(action.estimatedMonthlySavingsCents)}/mo
                         </span>
                         <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -409,7 +415,13 @@ export function ProjectDetailView({ slug }: { slug: string }) {
                 <details key={finding.id} className="group">
                   <summary className="list-none cursor-pointer px-6 py-4 flex items-center justify-between gap-4 hover:bg-secondary/50 transition-colors">
                     <div className="min-w-0 flex flex-col gap-0.5">
-                      <span className="text-sm font-medium text-foreground">
+                      <span
+                        className={
+                          finding.ruleCode === "RDS_7DAY_AUTORESTART"
+                            ? "text-sm font-medium text-alert"
+                            : "text-sm font-medium text-foreground"
+                        }
+                      >
                         {finding.title}
                       </span>
                       <span className="text-xs text-muted-foreground truncate">
@@ -418,7 +430,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       {finding.estimatedMonthlySavingsCents > 0 ? (
-                        <span className="text-xs font-mono tabular-money text-muted-foreground">
+                        <span className="text-xs font-mono tabular-money text-savings">
                           -{formatCentsUsd(finding.estimatedMonthlySavingsCents)}/mo
                         </span>
                       ) : null}

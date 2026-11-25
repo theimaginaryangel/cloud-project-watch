@@ -2,14 +2,14 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "TagWatch — AWS Project Cost & Zombie Tracker",
-    short_name: "TagWatch",
+    name: "CloudProjectWatch",
+    short_name: "CloudProjectWatch",
     description:
-      "Track AWS costs by project, catch untagged zombie resources, and cut burn surgically without running terraform destroy.",
+      "Track AWS spending by project, spot untagged resources, and trim monthly costs without tearing down live apps.",
     start_url: "/",
     display: "standalone",
-    background_color: "#0f1117",
-    theme_color: "#0f1117",
+    background_color: "#09090b",
+    theme_color: "#09090b",
     icons: [
       {
         src: "/icon.svg",

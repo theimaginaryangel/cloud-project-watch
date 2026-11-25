@@ -9,7 +9,7 @@ export async function GET() {
     return new NextResponse(content, {
       headers: {
         "Content-Type": "text/yaml; charset=utf-8",
-        "Content-Disposition": 'attachment; filename="tagwatch-readonly-iam.yaml"',
+        "Content-Disposition": 'attachment; filename="cloudprojectwatch-readonly-iam.yaml"',
       },
     });
   } catch {

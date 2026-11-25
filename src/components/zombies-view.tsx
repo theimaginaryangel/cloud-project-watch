@@ -1,19 +1,11 @@
 "use client";
 
-import { AlertTriangle, Flame, FolderPlus, Tag } from "lucide-react";
+import { ChevronDown, ExternalLink, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { buildAwsConsoleUrl } from "@/lib/aws/console-links";
 import {
   ORPHANED_PROJECT_SLUG,
   SERVICE_LABELS,
@@ -58,10 +51,10 @@ export function ZombiesView() {
     try {
       setError(null);
       const res = await fetch("/api/dashboard", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load zombie inbox.");
+      if (!res.ok) throw new Error("Could not load resources.");
       setData((await res.json()) as DashboardPayload);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load zombie inbox.");
+      setError(err instanceof Error ? err.message : "Could not load resources.");
     } finally {
       setLoading(false);
     }
@@ -89,10 +82,10 @@ export function ZombiesView() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Failed to assign resource.");
+        throw new Error(body.error ?? "Could not assign resource.");
       }
 
-      toast.success(`Assigned ${assignTarget.name} to ${projectName.trim()}`);
+      toast(`Assigned ${assignTarget.name} to ${projectName.trim()}`);
       setAssignTarget(null);
       setProjectName("");
       await loadData();
@@ -105,10 +98,9 @@ export function ZombiesView() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <Skeleton className="h-9 w-56" />
-        <Skeleton className="h-44 w-full rounded-xl" />
-        <Skeleton className="h-44 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
     );
   }
@@ -116,8 +108,7 @@ export function ZombiesView() {
   if (error || !data) {
     return (
       <Alert variant="destructive">
-        <AlertTriangle />
-        <AlertTitle>Could not load Zombie Inbox</AlertTitle>
+        <AlertTitle>Could not load untagged resources</AlertTitle>
         <AlertDescription className="flex flex-col gap-3">
           <span>{error ?? "Unexpected error."}</span>
           <div>
@@ -133,150 +124,187 @@ export function ZombiesView() {
   const orphanedResources = data.resources.filter(
     (r) => r.projectSlug === ORPHANED_PROJECT_SLUG,
   );
+  const resourceById = new Map(data.resources.map((r) => [r.resourceId, r]));
   const wasteFindings = data.findings.filter((f) => f.ruleCode !== "UNTAGGED_RESOURCE");
   const existingProjects = data.projects
     .filter((p) => !p.isOrphaned)
     .map((p) => p.label);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Flame className="size-5 text-destructive" />
-          <span>Orphan & Zombie Inbox</span>
-        </h1>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-1.5">
+        <h1 className="text-3xl font-semibold tracking-tight">Untagged & idle</h1>
         <p className="text-sm text-muted-foreground">
-          Triage untagged resources from failed deploys or copy surgical cleanup commands.
+          Group untagged resources into a project or open them directly in the AWS Console.
         </p>
       </div>
 
       <Tabs defaultValue="orphans">
         <TabsList>
           <TabsTrigger value="orphans">
-            Untagged / Orphaned ({orphanedResources.length})
+            Untagged ({orphanedResources.length})
           </TabsTrigger>
           <TabsTrigger value="findings">
-            All Waste Alerts ({wasteFindings.length})
+            All checks ({wasteFindings.length})
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="orphans" className="mt-4 flex flex-col gap-3">
+        <TabsContent value="orphans" className="mt-6">
           {orphanedResources.length === 0 ? (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>Zero untagged resources</EmptyTitle>
+                <EmptyTitle>No untagged resources</EmptyTitle>
                 <EmptyDescription>
-                  Every discovered AWS resource is cleanly assigned to a project bucket.
+                  Every running resource in your last scan belongs to a project.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
-            orphanedResources.map((r) => {
-              const tagCli = buildTagResourcesCli([r.arn], "my-project", r.region);
-              return (
-                <Card key={r.id}>
-                  <CardHeader className="pb-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="flex flex-col gap-1">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <span>{r.name}</span>
-                          <Badge variant="secondary">{SERVICE_LABELS[r.service]}</Badge>
-                          <Badge variant="outline">{r.region}</Badge>
-                        </CardTitle>
-                        <CardDescription className="font-mono text-xs break-all">
-                          {r.arn}
-                        </CardDescription>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-base font-semibold font-mono tabular-money">
-                          {formatCentsUsd(r.monthlyCents)}/mo
+            <div className="glass-panel rounded-2xl overflow-hidden hairline-divide">
+              {orphanedResources.map((r) => {
+                const tagCli = buildTagResourcesCli([r.arn], "my-project", r.region);
+                const consoleUrl = buildAwsConsoleUrl(r.service, r.region, r.resourceId);
+
+                return (
+                  <details key={r.id} className="group">
+                    <summary className="list-none cursor-pointer px-6 py-4 flex items-center justify-between gap-4 hover:bg-secondary/50 transition-colors">
+                      <div className="min-w-0 flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">
+                            {r.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {SERVICE_LABELS[r.service]}
+                          </span>
                         </div>
-                        <div className="text-xs text-muted-foreground">{r.state}</div>
+                        <span className="text-xs text-muted-foreground font-mono truncate">
+                          {r.resourceId} · {r.region} · {r.state}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-sm font-mono tabular-money font-medium">
+                          {formatCentsUsd(r.monthlyCents)}/mo
+                        </span>
+                        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                      </div>
+                    </summary>
+
+                    <div className="px-6 pb-5 pt-1 flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setAssignTarget({
+                              arn: r.arn,
+                              name: r.name,
+                              region: r.region,
+                            });
+                            setProjectName(existingProjects[0] ?? "");
+                          }}
+                          className="rounded-full press-feedback"
+                        >
+                          <FolderPlus data-icon="inline-start" />
+                          Assign to project
+                        </Button>
+                        <CopyButton value={tagCli} label="Copy tag command" />
+                        <Button variant="ghost" size="sm" asChild>
+                          <a
+                            href={consoleUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Open in AWS Console
+                            <ExternalLink data-icon="inline-end" />
+                          </a>
+                        </Button>
+                      </div>
+
+                      <div className="rounded-xl bg-secondary/70 p-3.5 text-xs font-mono break-all whitespace-pre-wrap text-muted-foreground">
+                        {tagCli}
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setAssignTarget({ arn: r.arn, name: r.name, region: r.region });
-                          setProjectName(existingProjects[0] ?? "");
-                        }}
-                        className="active:scale-[0.97]"
-                      >
-                        <FolderPlus data-icon="inline-start" />
-                        Assign to Project (Local)
-                      </Button>
-                      <CopyButton value={tagCli} label="Copy AWS Tag CLI" />
-                    </div>
-                    <div className="rounded-md bg-muted p-2.5 text-xs font-mono overflow-x-auto">
-                      {tagCli}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })
+                  </details>
+                );
+              })}
+            </div>
           )}
         </TabsContent>
 
-        <TabsContent value="findings" className="mt-4 flex flex-col gap-3">
+        <TabsContent value="findings" className="mt-6">
           {wasteFindings.length === 0 ? (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>No zombie waste detected</EmptyTitle>
+                <EmptyTitle>No cost issues found</EmptyTitle>
                 <EmptyDescription>
-                  No unattached EIPs, orphaned EBS volumes, stopped RDS timers, or idle NAT
-                  gateways were found.
+                  No unattached Elastic IPs, unused EBS volumes, stopped RDS timers, or idle NAT
+                  gateways were detected.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
-            wasteFindings.map((f) => (
-              <Card key={f.id}>
-                <CardHeader className="pb-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge
-                          variant={
-                            f.severity === "critical" || f.severity === "high"
-                              ? "destructive"
-                              : "secondary"
-                          }
-                        >
-                          {f.severity}
-                        </Badge>
-                        <CardTitle className="text-base">{f.title}</CardTitle>
+            <div className="glass-panel rounded-2xl overflow-hidden hairline-divide">
+              {wasteFindings.map((f) => {
+                const matched = resourceById.get(f.resourceId);
+                const consoleUrl = matched
+                  ? buildAwsConsoleUrl(matched.service, matched.region, matched.resourceId)
+                  : null;
+
+                return (
+                  <details key={f.id} className="group">
+                    <summary className="list-none cursor-pointer px-6 py-4 flex items-center justify-between gap-4 hover:bg-secondary/50 transition-colors">
+                      <div className="min-w-0 flex flex-col gap-0.5">
+                        <span className="text-sm font-medium text-foreground">
+                          {f.title}
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate">
+                          {f.description}
+                        </span>
                       </div>
-                      <CardDescription>{f.description}</CardDescription>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        {f.estimatedMonthlySavingsCents > 0 ? (
+                          <span className="text-xs font-mono tabular-money text-muted-foreground">
+                            -{formatCentsUsd(f.estimatedMonthlySavingsCents)}/mo
+                          </span>
+                        ) : null}
+                        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                      </div>
+                    </summary>
+
+                    <div className="px-6 pb-5 pt-1 flex flex-col gap-3">
+                      <div className="rounded-xl bg-secondary/70 p-4 flex flex-col gap-3">
+                        <code className="text-xs font-mono break-all whitespace-pre-wrap leading-relaxed">
+                          {f.cliCommand}
+                        </code>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <CopyButton value={f.cliCommand} label="Copy command" />
+                          {consoleUrl ? (
+                            <Button variant="ghost" size="sm" asChild>
+                              <a
+                                href={consoleUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Open in AWS Console
+                                <ExternalLink data-icon="inline-end" />
+                              </a>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Terraform: {f.terraformHint}
+                      </p>
                     </div>
-                    {f.estimatedMonthlySavingsCents > 0 ? (
-                      <Badge variant="secondary" className="font-mono tabular-money shrink-0">
-                        Save {formatCentsUsd(f.estimatedMonthlySavingsCents)}/mo
-                      </Badge>
-                    ) : null}
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  <div className="flex flex-col gap-2 rounded-md bg-muted p-2.5 sm:flex-row sm:items-center sm:justify-between">
-                    <code className="text-xs font-mono overflow-x-auto">
-                      {f.cliCommand}
-                    </code>
-                    <CopyButton value={f.cliCommand} label="Copy CLI" />
-                  </div>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <Tag className="size-3" />
-                    <span>Terraform tip: {f.terraformHint}</span>
-                  </p>
-                </CardContent>
-              </Card>
-            ))
+                  </details>
+                );
+              })}
+            </div>
           )}
         </TabsContent>
       </Tabs>
 
-      {/* Assign Resource Dialog */}
       <Dialog
         open={Boolean(assignTarget)}
         onOpenChange={(open) => {
@@ -285,37 +313,35 @@ export function ZombiesView() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign Resource to a Project</DialogTitle>
+            <DialogTitle>Assign to project</DialogTitle>
             <DialogDescription>
-              Saves a local TagWatch mapping rule for{" "}
-              <strong className="font-mono">{assignTarget?.name}</strong> (strictly read-only —
-              does not modify AWS).
+              Groups <span className="font-mono">{assignTarget?.name}</span> locally inside
+              CloudProjectWatch without changing anything in AWS.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={(e) => void handleAssignSubmit(e)} className="flex flex-col gap-4">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="assign-project-name">Project Name</FieldLabel>
+                <FieldLabel htmlFor="assign-project-name">Project name</FieldLabel>
                 <Input
                   id="assign-project-name"
-                  placeholder="e.g. CloudPress, Kaluna, BankGuard"
+                  placeholder="CloudPress, Kaluna, BankGuard"
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
                   required
                 />
                 <FieldDescription>
-                  Existing projects:{" "}
-                  {existingProjects.length > 0 ? existingProjects.join(", ") : "None yet"}
+                  Existing: {existingProjects.length > 0 ? existingProjects.join(", ") : "None"}
                 </FieldDescription>
               </Field>
             </FieldGroup>
 
             {assignTarget && projectName.trim() ? (
-              <div className="flex flex-col gap-1.5 rounded-lg bg-muted p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium">
-                    Optional: permanently tag in AWS
+              <div className="rounded-xl bg-secondary/70 p-3.5 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Optional command to tag in AWS
                   </span>
                   <CopyButton
                     value={buildTagResourcesCli(
@@ -323,7 +349,7 @@ export function ZombiesView() {
                       projectName.trim(),
                       assignTarget.region,
                     )}
-                    label="Copy CLI"
+                    label="Copy"
                   />
                 </div>
                 <code className="text-[11px] font-mono break-all text-muted-foreground">
@@ -346,7 +372,7 @@ export function ZombiesView() {
               </Button>
               <Button type="submit" disabled={savingRule || !projectName.trim()}>
                 {savingRule ? <Spinner data-icon="inline-start" /> : null}
-                Save & Regroup
+                Save
               </Button>
             </DialogFooter>
           </form>

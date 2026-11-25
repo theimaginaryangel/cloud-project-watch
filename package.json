@@ -1,8 +1,8 @@
 {
-  "name": "tagwatch",
+  "name": "cloud-project-watch",
   "version": "0.1.0",
   "private": true,
-  "description": "Open-source AWS project cost & zombie resource tracker with surgical AI optimization (Gemini + Groq).",
+  "description": "Open-source AWS cost tracker grouped by project with read-only scanning and optional Gemini/Groq cost suggestions.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

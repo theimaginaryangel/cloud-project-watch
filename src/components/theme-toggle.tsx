@@ -8,7 +8,7 @@ export function ThemeToggle() {
   const [dark, setDark] = useState(true);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("tagwatch-theme");
+    const stored = window.localStorage.getItem("cpw-theme");
     const prefersDark =
       stored === "dark" ||
       (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -22,7 +22,7 @@ export function ThemeToggle() {
     // Zero-transition flash-free theme switching
     root.classList.add("no-theme-transitions");
     root.classList.toggle("dark", next);
-    window.localStorage.setItem("tagwatch-theme", next ? "dark" : "light");
+    window.localStorage.setItem("cpw-theme", next ? "dark" : "light");
     setDark(next);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {

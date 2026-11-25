@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const ORPHANED_PROJECT_SLUG = "__orphaned__" as const;
-export const ORPHANED_PROJECT_LABEL = "Untagged / Orphaned" as const;
+export const ORPHANED_PROJECT_LABEL = "Untagged" as const;
 
 export const AWS_SERVICES = [
   "ec2",

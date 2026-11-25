@@ -1,81 +1,61 @@
-# TagWatch
+# CloudProjectWatch
 
-**Track AWS burn by project, catch untagged zombie resources automatically, and cut cloud costs surgically without running `terraform destroy`.**
+Track AWS spending by project, find untagged or idle resources, and lower your monthly bill without running `terraform destroy` on live apps.
 
-Built after a half-failed Terraform deployment silently left orphaned RDS and Secrets Manager resources burning \$400 in the background. TagWatch keeps your live apps and portfolio demos online while showing you exactly how to slash waste.
+## Why this exists
 
----
+AWS groups bills by service (RDS, EC2, Secrets Manager) instead of by project. When you host multiple apps in one AWS account, a failed deploy can quietly leave an RDS instance, NAT Gateway, or unattached Elastic IP running for weeks.
 
-## Why TagWatch?
+CloudProjectWatch checks your live AWS resources using free `Describe*` and `ResourceGroupsTaggingAPI` calls, estimates monthly spend from exact integer pricing rates, groups everything by project, and links straight to each resource in the AWS Console.
 
-AWS groups bills by **service** (`RDS`, `EC2`, `Secrets Manager`), not by **project** (`CloudPress` vs `Kaluna` vs `BankGuard`). And polling AWS Cost Explorer (`ce:GetCostAndUsage`) costs **\$0.01 per request**—naive dashboard polling can burn thousands of dollars just checking your bill.
+## What it does
 
-TagWatch solves both problems:
+- **Free live scanning:** Reads EC2, EBS, Elastic IPs, NAT Gateways, RDS, Secrets Manager, and ALB/NLB without polling the paid Cost Explorer API.
+- **Retroactive project grouping:** Works on existing AWS accounts with zero setup beforehand. Groups resources by saved overrides, existing tags (`Project`, `app`, `aws:cloudformation:stack-name`), name prefixes (`cloudpress-*`), and parent attachments (such as an EBS volume mounted to an EC2 instance). Everything else lands under `Untagged`.
+- **Automatic checks:** Flags unattached Elastic IPs, unused EBS volumes, stopped RDS instances approaching AWS's 7-day auto-restart, static Secrets Manager entries that can move to free SSM Parameter Store, over-provisioned RDS IOPS, non-prod Multi-AZ databases, and running NAT Gateways.
+- **Optional Gemini and Groq suggestions (BYOK):** Bring your own Gemini key, Groq key, or both (with automatic fallback and snapshot caching) for non-destructive AWS CLI and Terraform steps.
+- **Read-only by design:** Never requests write or delete permissions. Every item includes a copyable CLI command and a direct link to open it in the AWS Console.
+- **24-hour Cost Explorer lock:** Optional actual MTD reconciliation via `ce:GetCostAndUsage` is disabled by default and locked in PostgreSQL to at most 1 call every 24 hours (max $0.30/month).
 
-1. **\$0/month Live Discovery:** Scans running EC2, EBS, Elastic IPs, NAT Gateways, RDS, Secrets Manager, and ALB/NLB using strictly free `Describe*` / `List*` / `ResourceGroupsTaggingAPI` endpoints + an integer-microcent pricing engine.
-2. **Retroactive 4-Layer Project Grouping:** Works on existing AWS accounts with zero pre-setup:
-   `Saved Overrides → Existing AWS Tags (Project, app, CloudFormation stack) → Name Prefixes & Parent Attachments → Red "Untagged / Orphaned" Inbox`.
-3. **Instant \$0 Zombie Rule Engine:** Automatically catches unattached EIPs, orphaned EBS volumes, stopped RDS 7-day auto-restart countdowns, non-rotating Secrets Manager secrets (→ free SSM Parameter Store), over-provisioned RDS IOPS (→ baseline `gp3`), non-prod Multi-AZ, and idle NAT Gateways.
-4. **Dual BYOK AI Surgical Advisor (Gemini + Groq):** Bring your own **Google Gemini** and/or **Groq** API key (with automatic fallback and snapshot-hash caching) for tailored, non-destructive AWS CLI and Terraform optimization playbooks.
-5. **Strictly Read-Only in v1:** TagWatch cannot modify or delete your infrastructure. It gives you 1-click copyable CLI and Terraform commands you review and run yourself.
+## Quick start
 
----
-
-## Quick Start (30 Seconds — Zero Docker Required)
-
-TagWatch ships in **Demo Mode** with an embedded local PostgreSQL engine (`PGlite`) so you can run it immediately, and scales seamlessly to **Neon**, **Supabase**, or **Docker Postgres** by changing `DATABASE_URL`.
+CloudProjectWatch ships with an embedded local PostgreSQL database (`PGlite`) and demo data so you can run it immediately without Docker.
 
 ```bash
-git clone <your-repo-url> tagwatch
-cd tagwatch
+git clone https://github.com/theimaginaryangel/cloud-project-watch.git
+cd cloud-project-watch
 cp .env.example .env
 npm install
 npm run dev
 ```
 
-Open **http://localhost:3000** — Demo Mode automatically loads `CloudPress`, `Kaluna`, `BankGuard`, and an `Untagged / Orphaned` zombie bucket so you can explore every screen right away.
+Open `http://localhost:3000`.
 
-### Using Docker Postgres or Neon / Supabase
+### Using PostgreSQL (Docker, Neon, or Supabase)
 
 ```bash
-# Option A: Local Docker Postgres
+# Local Docker Postgres
 docker compose up -d
-# Then set DATABASE_URL="postgresql://tagwatch:tagwatch@localhost:5432/tagwatch" in .env
+# Set DATABASE_URL="postgresql://tagwatch:tagwatch@localhost:5432/tagwatch" in .env
 
-# Option B: Free Neon or Supabase Postgres
+# Or Neon / Supabase
 # Set DATABASE_URL="postgresql://user:pass@host/db?sslmode=require" in .env
 ```
 
----
+## Connecting your AWS account
 
-## Connecting Your Real AWS Account (Strictly Read-Only)
+1. Open **Settings** (`/settings`) and switch to **Read-only IAM keys** (or **Local AWS CLI**).
+2. Download [infra/readonly-iam.yaml](infra/readonly-iam.yaml) to create a read-only IAM user in CloudFormation, or copy the minimal JSON policy directly from Settings.
+3. Paste your read-only keys (encrypted at rest using AES-256-GCM) and click **Test connection** followed by **Save & scan**.
 
-1. Open **Connect & Keys (`/settings`)** inside TagWatch.
-2. Download the 1-click CloudFormation template ([infra/readonly-iam.yaml](infra/readonly-iam.yaml)) or copy the minimal Read-Only IAM Policy JSON.
-3. Deploy the stack in AWS CloudFormation to create a read-only `tagwatch-readonly` IAM user, generate an Access Key, and paste it into **Step 1: Connect AWS** (encrypted at rest using AES-256-GCM).
-4. Click **Test Connection** → **Save & Scan Now**.
-
-> **Cost Explorer Guardrail:** Optional actual MTD reconciliation via `ce:GetCostAndUsage` is disabled by default and hard-locked in PostgreSQL to **at most 1 call per 24 hours** (max \$0.30/month).
-
----
-
-## Bring Your Own AI Keys (Gemini + Groq)
-
-In **Connect & Keys → 2. AI Keys** (or in `.env`):
-- Add a **Google Gemini** API key (`GEMINI_API_KEY`)
-- Add a **Groq** API key (`GROQ_API_KEY`)
-- Or add **both** and enable **Auto (Gemini → Groq)** fallback so rate limits never interrupt an analysis.
-
----
-
-## Development & Verification
+## Tests and build
 
 ```bash
-npm test          # Unit tests + real PostgreSQL concurrency, idempotency & 24h guard tests
-npm run typecheck # Strict TypeScript check
-npm run build     # Production Next.js build
+npm test
+npm run typecheck
+npm run build
 ```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

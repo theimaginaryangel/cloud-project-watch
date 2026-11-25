@@ -1,15 +1,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  TagWatch Read-Only IAM Policy & User. Grants strictly read-only permissions
-  to free AWS Describe*/List*/Tagging APIs so TagWatch can group costs by
-  project and detect zombie resources without any ability to modify or delete
-  your infrastructure.
+  CloudProjectWatch Read-Only IAM Policy & User. Grants read-only access to
+  free AWS Describe/List/Tagging APIs so CloudProjectWatch can group costs by
+  project without any permission to modify or delete resources.
 
 Parameters:
   UserName:
     Type: String
-    Default: tagwatch-readonly
-    Description: IAM user name to create for TagWatch read-only scanning.
+    Default: cloudprojectwatch-readonly
+    Description: IAM user name to create for CloudProjectWatch read-only scanning.
   AllowCostExplorerSync:
     Type: String
     Default: "false"
@@ -17,21 +16,21 @@ Parameters:
       - "true"
       - "false"
     Description: >-
-      Optional: allow ce:GetCostAndUsage (TagWatch caps calls to 1x/24h = max $0.30/mo).
+      Optional: allow ce:GetCostAndUsage (locked to 1 call per 24h, max $0.30/month).
 
 Conditions:
   EnableCostExplorer: !Equals [!Ref AllowCostExplorerSync, "true"]
 
 Resources:
-  TagWatchReadOnlyPolicy:
+  CloudProjectWatchReadOnlyPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: !Sub "${UserName}-policy"
-      Description: Strictly read-only Describe*/List* policy for TagWatch.
+      Description: Read-only Describe/List policy for CloudProjectWatch.
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: TagWatchFreeDiscovery
+          - Sid: CloudProjectWatchFreeDiscovery
             Effect: Allow
             Action:
               - tag:GetResources
@@ -47,24 +46,24 @@ Resources:
             Resource: "*"
           - !If
             - EnableCostExplorer
-            - Sid: TagWatchOptionalDailyCostExplorer
+            - Sid: CloudProjectWatchDailyCostExplorer
               Effect: Allow
               Action:
                 - ce:GetCostAndUsage
               Resource: "*"
             - !Ref AWS::NoValue
 
-  TagWatchUser:
+  CloudProjectWatchUser:
     Type: AWS::IAM::User
     Properties:
       UserName: !Ref UserName
       ManagedPolicyArns:
-        - !Ref TagWatchReadOnlyPolicy
+        - !Ref CloudProjectWatchReadOnlyPolicy
 
 Outputs:
   IAMUserName:
-    Description: Created strictly read-only IAM user. Generate an Access Key in IAM Console -> Security Credentials.
-    Value: !Ref TagWatchUser
+    Description: Read-only IAM user. Create an Access Key in IAM Console -> Security Credentials.
+    Value: !Ref CloudProjectWatchUser
   ManagedPolicyArn:
-    Description: ARN of the strictly read-only TagWatch policy.
-    Value: !Ref TagWatchReadOnlyPolicy
+    Description: ARN of the read-only CloudProjectWatch policy.
+    Value: !Ref CloudProjectWatchReadOnlyPolicy

@@ -1,32 +1,11 @@
 "use client";
 
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Cloud,
-  Download,
-  KeyRound,
-  Plus,
-  RefreshCw,
-  ShieldCheck,
-  Sparkles,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -86,14 +64,12 @@ export function SettingsView() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Step 1: AWS Connection
   const [conn, setConn] = useState<ConnectionSettingsState | null>(null);
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
   const [testingAws, setTestingAws] = useState(false);
   const [savingAws, setSavingAws] = useState(false);
 
-  // Step 2: AI Keys (Gemini + Groq)
   const [ai, setAi] = useState<AiSettingsState | null>(null);
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
@@ -104,7 +80,6 @@ export function SettingsView() {
   const [savingAi, setSavingAi] = useState(false);
   const [testingProvider, setTestingProvider] = useState<"gemini" | "groq" | null>(null);
 
-  // Step 3: Grouping Rules & Cost Explorer
   const [rules, setRules] = useState<SavedRule[]>([]);
   const [newRuleType, setNewRuleType] = useState<"name_prefix" | "tag_key">("name_prefix");
   const [newPattern, setNewPattern] = useState("");
@@ -124,7 +99,7 @@ export function SettingsView() {
       if (!connRes.ok || !aiRes.ok || !rulesRes.ok) {
         const failed = !connRes.ok ? connRes : !aiRes.ok ? aiRes : rulesRes;
         const body = (await failed.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Failed to load TagWatch settings.");
+        throw new Error(body.error ?? "Could not load settings.");
       }
 
       const connPayload = (await connRes.json()) as { connection: ConnectionSettingsState };
@@ -140,7 +115,7 @@ export function SettingsView() {
       const rulesPayload = (await rulesRes.json()) as { rules: SavedRule[] };
       setRules(rulesPayload.rules);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load settings.");
+      setLoadError(err instanceof Error ? err.message : "Could not load settings.");
     } finally {
       setLoading(false);
     }
@@ -157,7 +132,7 @@ export function SettingsView() {
       ? conn.regions.filter((r) => r !== region)
       : [...conn.regions, region];
     if (next.length === 0) {
-      toast.error("Select at least one AWS region.");
+      toast.error("Select at least one region.");
       return;
     }
     setConn({ ...conn, regions: next });
@@ -180,7 +155,7 @@ export function SettingsView() {
       if (!res.ok || !body.ok) {
         throw new Error(body.error ?? "Connection test failed.");
       }
-      toast.success(body.message ?? "AWS connection verified!");
+      toast(body.message ?? "AWS connection verified.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "AWS test failed.");
     } finally {
@@ -204,7 +179,7 @@ export function SettingsView() {
         }),
       });
       const body = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok) throw new Error(body.error ?? "Failed to save AWS connection.");
+      if (!res.ok) throw new Error(body.error ?? "Could not save AWS settings.");
 
       setAccessKeyId("");
       setSecretAccessKey("");
@@ -219,12 +194,12 @@ export function SettingsView() {
         });
         if (!scanRes.ok) {
           const scanErr = (await scanRes.json().catch(() => ({}))) as { error?: string };
-          toast.warning(`Settings saved, but scan reported: ${scanErr.error ?? "error"}`);
+          toast.error(`Saved, but scan failed: ${scanErr.error ?? "unknown error"}`);
         } else {
-          toast.success("AWS settings saved and fresh scan completed!");
+          toast("Saved and scanned AWS");
         }
       } else {
-        toast.success("AWS settings saved.");
+        toast("AWS settings saved");
       }
 
       await loadAll();
@@ -253,14 +228,14 @@ export function SettingsView() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Failed to save AI settings.");
+        throw new Error(body.error ?? "Could not save API keys.");
       }
       setGeminiKeyInput("");
       setGroqKeyInput("");
-      toast.success("BYOK AI settings encrypted and saved.");
+      toast("API keys encrypted and saved");
       await loadAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save AI settings.");
+      toast.error(err instanceof Error ? err.message : "Could not save API keys.");
     } finally {
       setSavingAi(false);
     }
@@ -275,7 +250,10 @@ export function SettingsView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider,
-          apiKey: provider === "gemini" ? geminiKeyInput.trim() || undefined : groqKeyInput.trim() || undefined,
+          apiKey:
+            provider === "gemini"
+              ? geminiKeyInput.trim() || undefined
+              : groqKeyInput.trim() || undefined,
           modelId: provider === "gemini" ? geminiModel : groqModel,
         }),
       });
@@ -283,7 +261,7 @@ export function SettingsView() {
       if (!res.ok || !body.ok) {
         throw new Error(body.error ?? `${provider} verification failed.`);
       }
-      toast.success(body.message ?? `${provider} key verified!`);
+      toast(body.message ?? `${provider} key works.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Verification failed.");
     } finally {
@@ -306,10 +284,10 @@ export function SettingsView() {
           rescanAfterSave: true,
         }),
       });
-      if (!res.ok) throw new Error("Failed to add rule.");
+      if (!res.ok) throw new Error("Could not save rule.");
       setNewPattern("");
       setNewProjectLabel("");
-      toast.success("Rule saved and resources regrouped.");
+      toast("Rule saved");
       await loadAll();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save rule.");
@@ -325,7 +303,7 @@ export function SettingsView() {
       body: JSON.stringify({ id }),
     });
     if (res.ok) {
-      toast.success("Rule removed.");
+      toast("Rule removed");
       await loadAll();
     }
   }
@@ -341,10 +319,10 @@ export function SettingsView() {
         error?: string;
       };
       if (!res.ok) throw new Error(body.error ?? "Cost Explorer sync failed.");
-      toast.success(
+      toast(
         body.source === "cached"
-          ? `Returned 24h cached Cost Explorer MTD: ${formatCentsUsd(body.actualMtdCents ?? 0)} ($0.00)`
-          : `Synced Cost Explorer MTD: ${formatCentsUsd(body.actualMtdCents ?? 0)} ($0.01)`,
+          ? `Cached MTD: ${formatCentsUsd(body.actualMtdCents ?? 0)}`
+          : `Synced MTD: ${formatCentsUsd(body.actualMtdCents ?? 0)}`,
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Cost Explorer sync failed.");
@@ -355,9 +333,9 @@ export function SettingsView() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-4">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-80 w-full rounded-xl" />
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-9 w-48" />
+        <Skeleton className="h-80 w-full rounded-2xl" />
       </div>
     );
   }
@@ -365,10 +343,9 @@ export function SettingsView() {
   if (loadError || !conn || !ai) {
     return (
       <Alert variant="destructive">
-        <AlertTriangle />
-        <AlertTitle>Unable to load Settings</AlertTitle>
+        <AlertTitle>Could not load settings</AlertTitle>
         <AlertDescription className="flex flex-col gap-3">
-          <span>{loadError ?? "Unexpected empty settings response."}</span>
+          <span>{loadError ?? "Unexpected error."}</span>
           <div>
             <Button variant="outline" size="sm" onClick={() => void loadAll()}>
               Try again
@@ -382,36 +359,33 @@ export function SettingsView() {
   const iamPolicyJson = getReadOnlyPolicyJson(conn.costExplorerEnabled);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Connect AWS & BYOK Keys</h1>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-1.5">
+        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Open-source self-hosted setup. All saved keys are encrypted at rest with AES-256-GCM
-          and never sent back to the browser.
+          Connect a read-only AWS account, add your own Gemini or Groq keys, and manage grouping
+          rules. Keys are encrypted with AES-256-GCM.
         </p>
       </div>
 
       <Tabs defaultValue="aws">
         <TabsList>
-          <TabsTrigger value="aws">1. Connect AWS</TabsTrigger>
-          <TabsTrigger value="ai">2. AI Keys (Gemini & Groq)</TabsTrigger>
-          <TabsTrigger value="rules">3. Project Rules & Billing</TabsTrigger>
+          <TabsTrigger value="aws">AWS account</TabsTrigger>
+          <TabsTrigger value="ai">API keys</TabsTrigger>
+          <TabsTrigger value="rules">Rules & billing</TabsTrigger>
         </TabsList>
 
-        {/* STEP 1: AWS */}
-        <TabsContent value="aws" className="mt-4 flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Cloud className="size-4" />
-                <span>Step 1 — Choose AWS Connection Mode</span>
-              </CardTitle>
-              <CardDescription>
-                TagWatch requires strictly read-only permissions. It can never modify or delete
-                your AWS infrastructure.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-5">
+        {/* TAB 1: AWS */}
+        <TabsContent value="aws" className="mt-6 flex flex-col gap-6">
+          <div className="glass-panel rounded-2xl overflow-hidden hairline-divide">
+            <div className="p-6 flex flex-col gap-5">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-base font-medium">Connection mode</h2>
+                <p className="text-xs text-muted-foreground">
+                  CloudProjectWatch only reads AWS metadata. It cannot stop or delete resources.
+                </p>
+              </div>
+
               <ToggleGroup
                 type="single"
                 value={conn.mode}
@@ -423,42 +397,37 @@ export function SettingsView() {
                 variant="outline"
                 className="justify-start flex-wrap"
               >
-                <ToggleGroupItem value="demo">Demo Mode (Zero Keys)</ToggleGroupItem>
-                <ToggleGroupItem value="iam_keys">Read-Only IAM Keys (BYOK)</ToggleGroupItem>
-                <ToggleGroupItem value="env_default">Local AWS CLI / Env</ToggleGroupItem>
+                <ToggleGroupItem value="demo">Demo data</ToggleGroupItem>
+                <ToggleGroupItem value="iam_keys">Read-only IAM keys</ToggleGroupItem>
+                <ToggleGroupItem value="env_default">Local AWS CLI</ToggleGroupItem>
               </ToggleGroup>
 
               {conn.mode === "iam_keys" ? (
-                <div className="flex flex-col gap-4">
-                  <Alert>
-                    <ShieldCheck />
-                    <AlertTitle>30-Second Read-Only IAM Setup</AlertTitle>
-                    <AlertDescription className="flex flex-col gap-3 pt-1">
-                      <span>
-                        Download our CloudFormation template to create a strictly read-only{" "}
-                        <code>tagwatch-readonly</code> IAM user, or copy the minimal JSON policy
-                        below into AWS IAM.
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <a href="/api/templates/readonly-iam" download>
-                            <Download data-icon="inline-start" />
-                            Download CloudFormation YAML
-                          </a>
-                        </Button>
-                        <CopyButton value={iamPolicyJson} label="Copy IAM Policy JSON" />
-                      </div>
-                    </AlertDescription>
-                  </Alert>
+                <div className="flex flex-col gap-5 pt-2">
+                  <div className="rounded-xl bg-secondary/60 p-4 flex flex-col gap-3">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Create a read-only IAM user with our CloudFormation template or copy the
+                      JSON policy below.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <a href="/api/templates/readonly-iam" download>
+                          <Download data-icon="inline-start" />
+                          Download template
+                        </a>
+                      </Button>
+                      <CopyButton value={iamPolicyJson} label="Copy IAM policy" />
+                    </div>
+                  </div>
 
                   <FieldGroup>
                     <Field>
-                      <FieldLabel htmlFor="aws-access-key">AWS Access Key ID</FieldLabel>
+                      <FieldLabel htmlFor="aws-access-key">Access Key ID</FieldLabel>
                       <Input
                         id="aws-access-key"
                         placeholder={
                           conn.credentials.configured
-                            ? `Saved (ending in ${conn.credentials.last4}) — leave blank to keep`
+                            ? `Saved (ending in ${conn.credentials.last4})`
                             : "AKIA..."
                         }
                         value={accessKeyId}
@@ -466,297 +435,256 @@ export function SettingsView() {
                       />
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor="aws-secret-key">AWS Secret Access Key</FieldLabel>
+                      <FieldLabel htmlFor="aws-secret-key">Secret Access Key</FieldLabel>
                       <Input
                         id="aws-secret-key"
                         type="password"
                         placeholder={
                           conn.credentials.configured
-                            ? "•••••••••••••••• (encrypted in Postgres)"
-                            : "Enter read-only secret key"
+                            ? "Leave blank to keep saved key"
+                            : "Paste secret key"
                         }
                         value={secretAccessKey}
                         onChange={(e) => setSecretAccessKey(e.target.value)}
                       />
-                      <FieldDescription>
-                        Encrypted with AES-256-GCM before storage. Never logged or exposed to
-                        client JS.
-                      </FieldDescription>
                     </Field>
                   </FieldGroup>
                 </div>
               ) : null}
 
               {conn.mode === "env_default" ? (
-                <Alert>
-                  <CheckCircle2 />
-                  <AlertTitle>Uses Server Environment or Local ~/.aws Profile</AlertTitle>
-                  <AlertDescription>
-                    TagWatch will use the AWS SDK default credential provider chain (
-                    <code>AWS_ACCESS_KEY_ID</code> / <code>~/.aws/credentials</code> / EC2
-                    instance role). Detected in env:{" "}
-                    <strong>{conn.envAwsAvailable ? "Yes" : "Using local AWS profile"}</strong>.
-                  </AlertDescription>
-                </Alert>
+                <p className="text-xs text-muted-foreground">
+                  Reads credentials from environment variables or your local{" "}
+                  <code className="font-mono">~/.aws/credentials</code> profile. Env keys
+                  detected: {conn.envAwsAvailable ? "Yes" : "No (using local profile)"}.
+                </p>
               ) : null}
+            </div>
 
-              <Separator />
-
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">AWS Regions to Scan ($0 Describe*)</span>
-                <div className="flex flex-wrap gap-2">
-                  {COMMON_AWS_REGIONS.map((region) => {
-                    const selected = conn.regions.includes(region);
-                    return (
-                      <Button
-                        key={region}
-                        type="button"
-                        size="sm"
-                        variant={selected ? "default" : "outline"}
-                        onClick={() => toggleRegion(region)}
-                        className="font-mono text-xs active:scale-[0.97]"
-                      >
-                        {region}
-                      </Button>
-                    );
-                  })}
-                </div>
+            <div className="p-6 flex flex-col gap-3">
+              <span className="text-sm font-medium">Regions</span>
+              <div className="flex flex-wrap gap-2">
+                {COMMON_AWS_REGIONS.map((region) => {
+                  const selected = conn.regions.includes(region);
+                  return (
+                    <Button
+                      key={region}
+                      type="button"
+                      size="sm"
+                      variant={selected ? "default" : "outline"}
+                      onClick={() => toggleRegion(region)}
+                      className="rounded-full font-mono text-xs press-feedback"
+                    >
+                      {region}
+                    </Button>
+                  );
+                })}
               </div>
-            </CardContent>
-            <CardFooter className="justify-between flex-wrap gap-2 border-t border-border/60 pt-4">
+            </div>
+
+            <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-2">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => void handleTestAws()}
                 disabled={testingAws}
+                className="rounded-full"
               >
                 {testingAws ? <Spinner data-icon="inline-start" /> : null}
-                Test Connection
+                Test connection
               </Button>
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => void handleSaveAws(false)}
                   disabled={savingAws}
+                  className="rounded-full"
                 >
                   Save
                 </Button>
                 <Button
                   type="button"
+                  size="sm"
                   onClick={() => void handleSaveAws(true)}
                   disabled={savingAws}
+                  className="rounded-full press-feedback"
                 >
                   {savingAws ? <Spinner data-icon="inline-start" /> : null}
-                  Save & Scan Now
+                  Save & scan
                 </Button>
               </div>
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Minimal Read-Only IAM Policy JSON</CardTitle>
-              <CardDescription>
-                Zero write permissions — safe for open-source auditing
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <pre className="max-h-64 overflow-auto rounded-lg bg-muted p-3 text-xs font-mono">
+          <details className="glass-panel rounded-2xl overflow-hidden">
+            <summary className="list-none cursor-pointer px-6 py-4 text-sm font-medium flex items-center justify-between hover:bg-secondary/40">
+              <span>View minimal read-only IAM policy JSON</span>
+              <CopyButton value={iamPolicyJson} label="Copy JSON" />
+            </summary>
+            <div className="px-6 pb-5">
+              <pre className="rounded-xl bg-secondary/70 p-4 text-xs font-mono whitespace-pre-wrap break-words">
                 <code>{iamPolicyJson}</code>
               </pre>
-            </CardContent>
-          </Card>
+            </div>
+          </details>
         </TabsContent>
 
-        {/* STEP 2: AI KEYS (GEMINI + GROQ) */}
-        <TabsContent value="ai" className="mt-4 flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="size-4" />
-                <span>Step 2 — Dual BYOK AI Advisor (Gemini + Groq)</span>
-              </CardTitle>
-              <CardDescription>
-                Configure Gemini, Groq, or both. When Auto-Fallback is on, TagWatch seamlessly
-                switches to your second provider if one hits a rate limit or timeout.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Default AI Provider</span>
-                  <span className="text-xs text-muted-foreground">
-                    Can also be overridden per project click
-                  </span>
-                </div>
-                <ToggleGroup
-                  type="single"
-                  value={defaultProvider}
-                  onValueChange={(val) => {
-                    if (val === "auto" || val === "gemini" || val === "groq") {
-                      setDefaultProvider(val);
-                    }
-                  }}
+        {/* TAB 2: AI KEYS */}
+        <TabsContent value="ai" className="mt-6">
+          <div className="glass-panel rounded-2xl overflow-hidden hairline-divide">
+            <div className="p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="text-sm font-medium">Default provider</h2>
+                <p className="text-xs text-muted-foreground">
+                  Add Gemini, Groq, or both. You can also switch per project.
+                </p>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={defaultProvider}
+                onValueChange={(val) => {
+                  if (val === "auto" || val === "gemini" || val === "groq") {
+                    setDefaultProvider(val);
+                  }
+                }}
+                variant="outline"
+              >
+                <ToggleGroupItem value="auto">Auto</ToggleGroupItem>
+                <ToggleGroupItem value="gemini">Gemini</ToggleGroupItem>
+                <ToggleGroupItem value="groq">Groq</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            <div className="px-6 py-4 flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">Automatic fallback</span>
+                <span className="text-xs text-muted-foreground">
+                  Retry with your second key if the first hits a rate limit or timeout.
+                </span>
+              </div>
+              <Switch checked={fallbackEnabled} onCheckedChange={setFallbackEnabled} />
+            </div>
+
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Google Gemini</span>
+                <span className="text-xs text-muted-foreground">
+                  {ai.gemini.configured ? `Saved (••••${ai.gemini.last4})` : "Not set"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="gemini-key">API key</FieldLabel>
+                  <Input
+                    id="gemini-key"
+                    type="password"
+                    placeholder={ai.gemini.configured ? "Leave blank to keep" : "AIza..."}
+                    value={geminiKeyInput}
+                    onChange={(e) => setGeminiKeyInput(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="gemini-model">Model</FieldLabel>
+                  <Input
+                    id="gemini-model"
+                    value={geminiModel}
+                    onChange={(e) => setGeminiModel(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div>
+                <Button
+                  type="button"
+                  size="sm"
                   variant="outline"
+                  onClick={() => void handleVerifyAi("gemini")}
+                  disabled={testingProvider !== null}
+                  className="rounded-full"
                 >
-                  <ToggleGroupItem value="auto">Auto (Gemini → Groq)</ToggleGroupItem>
-                  <ToggleGroupItem value="gemini">Gemini</ToggleGroupItem>
-                  <ToggleGroupItem value="groq">Groq</ToggleGroupItem>
-                </ToggleGroup>
+                  {testingProvider === "gemini" ? <Spinner data-icon="inline-start" /> : null}
+                  Verify Gemini
+                </Button>
               </div>
+            </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium">Enable Automatic Fallback</span>
-                  <span className="text-xs text-muted-foreground">
-                    If your primary provider returns 429 or times out, automatically retry with the
-                    other configured key.
-                  </span>
-                </div>
-                <Switch checked={fallbackEnabled} onCheckedChange={setFallbackEnabled} />
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Groq</span>
+                <span className="text-xs text-muted-foreground">
+                  {ai.groq.configured ? `Saved (••••${ai.groq.last4})` : "Not set"}
+                </span>
               </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="groq-key">API key</FieldLabel>
+                  <Input
+                    id="groq-key"
+                    type="password"
+                    placeholder={ai.groq.configured ? "Leave blank to keep" : "gsk_..."}
+                    value={groqKeyInput}
+                    onChange={(e) => setGroqKeyInput(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="groq-model">Model</FieldLabel>
+                  <Input
+                    id="groq-model"
+                    value={groqModel}
+                    onChange={(e) => setGroqModel(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleVerifyAi("groq")}
+                  disabled={testingProvider !== null}
+                  className="rounded-full"
+                >
+                  {testingProvider === "groq" ? <Spinner data-icon="inline-start" /> : null}
+                  Verify Groq
+                </Button>
+              </div>
+            </div>
 
-              <Separator />
-
-              {/* Gemini */}
-              <FieldGroup>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold flex items-center gap-2">
-                    <KeyRound className="size-4" />
-                    Google Gemini
-                  </span>
-                  <Badge variant={ai.gemini.configured ? "default" : "outline"}>
-                    {ai.gemini.configured
-                      ? `Configured (${ai.gemini.source} · ••••${ai.gemini.last4})`
-                      : "Not configured"}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="gemini-key">Gemini API Key</FieldLabel>
-                    <Input
-                      id="gemini-key"
-                      type="password"
-                      placeholder={
-                        ai.gemini.configured ? "Leave blank to keep saved key" : "AIza..."
-                      }
-                      value={geminiKeyInput}
-                      onChange={(e) => setGeminiKeyInput(e.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="gemini-model">Gemini Model</FieldLabel>
-                    <Input
-                      id="gemini-model"
-                      value={geminiModel}
-                      onChange={(e) => setGeminiModel(e.target.value)}
-                    />
-                  </Field>
-                </div>
-
-                <div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleVerifyAi("gemini")}
-                    disabled={testingProvider !== null}
-                  >
-                    {testingProvider === "gemini" ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : null}
-                    Verify Gemini Key
-                  </Button>
-                </div>
-              </FieldGroup>
-
-              <Separator />
-
-              {/* Groq */}
-              <FieldGroup>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold flex items-center gap-2">
-                    <KeyRound className="size-4" />
-                    Groq
-                  </span>
-                  <Badge variant={ai.groq.configured ? "default" : "outline"}>
-                    {ai.groq.configured
-                      ? `Configured (${ai.groq.source} · ••••${ai.groq.last4})`
-                      : "Not configured"}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="groq-key">Groq API Key</FieldLabel>
-                    <Input
-                      id="groq-key"
-                      type="password"
-                      placeholder={
-                        ai.groq.configured ? "Leave blank to keep saved key" : "gsk_..."
-                      }
-                      value={groqKeyInput}
-                      onChange={(e) => setGroqKeyInput(e.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="groq-model">Groq Model</FieldLabel>
-                    <Input
-                      id="groq-model"
-                      value={groqModel}
-                      onChange={(e) => setGroqModel(e.target.value)}
-                    />
-                  </Field>
-                </div>
-
-                <div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleVerifyAi("groq")}
-                    disabled={testingProvider !== null}
-                  >
-                    {testingProvider === "groq" ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : null}
-                    Verify Groq Key
-                  </Button>
-                </div>
-              </FieldGroup>
-            </CardContent>
-            <CardFooter className="justify-end border-t border-border/60 pt-4">
-              <Button type="button" onClick={() => void handleSaveAi()} disabled={savingAi}>
+            <div className="px-6 py-4 flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleSaveAi()}
+                disabled={savingAi}
+                className="rounded-full px-5 press-feedback"
+              >
                 {savingAi ? <Spinner data-icon="inline-start" /> : null}
-                Save Encrypted AI Settings
+                Save keys
               </Button>
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
 
-        {/* STEP 3: PROJECT RULES & 24H COST EXPLORER GUARD */}
-        <TabsContent value="rules" className="mt-4 flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Tag className="size-4" />
-                <span>Step 3 — Retroactive Project Grouping Rules</span>
-              </CardTitle>
-              <CardDescription>
-                TagWatch automatically reads <code>Project</code>, <code>app</code>, and{" "}
-                <code>aws:cloudformation:stack-name</code> tags. Add name-prefix rules here to
-                auto-group untagged legacy resources (e.g., <code>cloudpress-*</code>).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-5">
+        {/* TAB 3: RULES & BILLING */}
+        <TabsContent value="rules" className="mt-6 flex flex-col gap-6">
+          <div className="glass-panel rounded-2xl overflow-hidden hairline-divide">
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="text-sm font-medium">Project grouping rules</h2>
+                <p className="text-xs text-muted-foreground">
+                  Resources with Project, app, or CloudFormation stack tags group automatically.
+                  Add name-prefix rules for untagged resources.
+                </p>
+              </div>
+
               <form
                 onSubmit={(e) => void handleAddRule(e)}
                 className="grid grid-cols-1 gap-3 sm:grid-cols-4 items-end"
               >
                 <Field>
-                  <FieldLabel>Rule Type</FieldLabel>
+                  <FieldLabel>Type</FieldLabel>
                   <Select
                     value={newRuleType}
                     onValueChange={(v) => setNewRuleType(v as "name_prefix" | "tag_key")}
@@ -766,8 +694,8 @@ export function SettingsView() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="name_prefix">Name Prefix</SelectItem>
-                        <SelectItem value="tag_key">Custom Tag Key</SelectItem>
+                        <SelectItem value="name_prefix">Name prefix</SelectItem>
+                        <SelectItem value="tag_key">Tag key</SelectItem>
                       </SelectGroup>
                     </SelectContent>
                   </Select>
@@ -777,7 +705,7 @@ export function SettingsView() {
                   <FieldLabel htmlFor="rule-pattern">Pattern</FieldLabel>
                   <Input
                     id="rule-pattern"
-                    placeholder={newRuleType === "name_prefix" ? "cloudpress-*" : "ServiceName"}
+                    placeholder={newRuleType === "name_prefix" ? "cloudpress-*" : "Service"}
                     value={newPattern}
                     onChange={(e) => setNewPattern(e.target.value)}
                     required
@@ -785,7 +713,7 @@ export function SettingsView() {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="rule-project">Target Project</FieldLabel>
+                  <FieldLabel htmlFor="rule-project">Project</FieldLabel>
                   <Input
                     id="rule-project"
                     placeholder="CloudPress"
@@ -795,126 +723,103 @@ export function SettingsView() {
                   />
                 </Field>
 
-                <Button type="submit" disabled={savingRule}>
+                <Button type="submit" disabled={savingRule} className="rounded-full">
                   {savingRule ? (
                     <Spinner data-icon="inline-start" />
                   ) : (
                     <Plus data-icon="inline-start" />
                   )}
-                  Add Rule
+                  Add rule
                 </Button>
               </form>
+            </div>
 
-              {rules.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  {rules.map((rule) => (
-                    <div
-                      key={rule.id}
-                      className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">{rule.ruleType}</Badge>
-                        <code className="font-mono text-xs">{rule.pattern}</code>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="font-medium">{rule.projectLabel}</span>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => void handleDeleteRule(rule.id)}
-                        aria-label="Delete rule"
-                      >
-                        <Trash2 className="size-4 text-muted-foreground" />
-                      </Button>
+            {rules.length > 0 ? (
+              <div className="hairline-divide">
+                {rules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="px-6 py-3.5 flex items-center justify-between text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{rule.ruleType}</span>
+                      <code className="font-mono text-xs">{rule.pattern}</code>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium">{rule.projectLabel}</span>
                     </div>
-                  ))}
-                </div>
-              ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => void handleDeleteRule(rule.id)}
+                      aria-label="Delete rule"
+                    >
+                      <Trash2 className="size-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="glass-panel rounded-2xl overflow-hidden hairline-divide">
+            <div className="p-6 flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="text-sm font-medium">Daily Cost Explorer sync (optional)</h2>
                 <p className="text-xs text-muted-foreground">
-                  No custom rules saved yet. Built-in tag matching and parent-attachment
-                  inheritance are always active.
+                  AWS charges $0.01 per request. Locked to at most once every 24 hours (max
+                  $0.30/month).
                 </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Optional 24h Cost Explorer Guard */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Optional Daily Cost Explorer Sync (Hard-Capped at 1×/24h)
-              </CardTitle>
-              <CardDescription>
-                AWS Cost Explorer charges $0.01 per request. TagWatch locks syncs in PostgreSQL
-                for 24 hours (max $0.30/month) and never polls it from the browser.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium">Allow 24h Cost Explorer Sync</span>
-                  <span className="text-xs text-muted-foreground">
-                    Requires ce:GetCostAndUsage in your read-only IAM policy
-                  </span>
-                </div>
-                <Switch
-                  checked={conn.costExplorerEnabled}
-                  onCheckedChange={(checked) =>
-                    setConn({ ...conn, costExplorerEnabled: checked })
-                  }
-                />
               </div>
+              <Switch
+                checked={conn.costExplorerEnabled}
+                onCheckedChange={(checked) =>
+                  setConn({ ...conn, costExplorerEnabled: checked })
+                }
+              />
+            </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void handleSaveAws(false)}
-                  disabled={savingAws}
-                >
-                  Save Cost Explorer Preference
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleSyncCostExplorer()}
-                  disabled={!conn.costExplorerEnabled || conn.mode === "demo" || syncingCe}
-                >
-                  {syncingCe ? (
-                    <Spinner data-icon="inline-start" />
-                  ) : (
-                    <RefreshCw data-icon="inline-start" />
-                  )}
-                  Sync Actual MTD ($0.01 max/24h)
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="px-6 py-4 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void handleSaveAws(false)}
+                disabled={savingAws}
+                className="rounded-full"
+              >
+                Save preference
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => void handleSyncCostExplorer()}
+                disabled={!conn.costExplorerEnabled || conn.mode === "demo" || syncingCe}
+                className="rounded-full"
+              >
+                {syncingCe ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <RefreshCw data-icon="inline-start" />
+                )}
+                Sync actual MTD
+              </Button>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Starter Terraform <code>default_tags</code> Block
-              </CardTitle>
-              <CardDescription>
-                Drop this into new Terraform projects so every future resource tags itself
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <div className="flex flex-col gap-3 rounded-lg bg-muted p-3 sm:flex-row sm:items-start sm:justify-between">
-                <pre className="overflow-x-auto text-xs font-mono">
-                  <code>{buildTerraformDefaultTags("my-new-project")}</code>
-                </pre>
-                <CopyButton
-                  value={buildTerraformDefaultTags("my-new-project")}
-                  label="Copy HCL"
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="glass-panel rounded-2xl p-6 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">Terraform default_tags starter</span>
+              <CopyButton
+                value={buildTerraformDefaultTags("my-new-project")}
+                label="Copy HCL"
+              />
+            </div>
+            <pre className="rounded-xl bg-secondary/70 p-4 text-xs font-mono whitespace-pre-wrap break-words">
+              <code>{buildTerraformDefaultTags("my-new-project")}</code>
+            </pre>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

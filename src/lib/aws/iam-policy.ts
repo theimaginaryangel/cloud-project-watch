@@ -2,7 +2,7 @@ export const READONLY_IAM_POLICY = {
   Version: "2012-10-17",
   Statement: [
     {
-      Sid: "TagWatchFreeDiscovery",
+      Sid: "CloudProjectWatchFreeDiscovery",
       Effect: "Allow",
       Action: [
         "tag:GetResources",
@@ -22,7 +22,7 @@ export const READONLY_IAM_POLICY = {
 } as const;
 
 export const OPTIONAL_COST_EXPLORER_STATEMENT = {
-  Sid: "TagWatchOptionalDailyCostExplorer",
+  Sid: "CloudProjectWatchDailyCostExplorer",
   Effect: "Allow",
   Action: ["ce:GetCostAndUsage"],
   Resource: "*",

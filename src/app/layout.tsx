@@ -5,15 +5,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TagWatch — AWS Project Cost & Zombie Resource Tracker",
+  title: "CloudProjectWatch",
   description:
-    "Open-source AWS cost tracker grouped by project. Catch untagged zombie resources and cut monthly spend surgically without running terraform destroy.",
+    "Track AWS spending by project, spot untagged resources, and trim monthly costs without tearing down running apps.",
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
-    { media: "(prefers-color-scheme: dark)", color: "#14161f" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f5f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0c" },
   ],
 };
 
@@ -27,7 +27,7 @@ export default function RootLayout({
       <body className="font-sans">
         <TooltipProvider delayDuration={300}>
           <AppShell>{children}</AppShell>
-          <Toaster richColors position="bottom-right" />
+          <Toaster position="bottom-right" />
         </TooltipProvider>
       </body>
     </html>

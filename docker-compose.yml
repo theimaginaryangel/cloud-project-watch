@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tagwatch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tagwatch
+      POSTGRES_PASSWORD: tagwatch
+      POSTGRES_DB: tagwatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - tagwatch_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tagwatch -d tagwatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tagwatch_pgdata:

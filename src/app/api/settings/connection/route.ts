@@ -10,6 +10,7 @@ import {
 import {
   blockIfPublicDemoLocked,
   isPublicDemoLocked,
+  isStatelessDemoMode,
 } from "@/lib/security/guards";
 
 const UpdateConnectionSchema = z.object({
@@ -22,6 +23,21 @@ const UpdateConnectionSchema = z.object({
 });
 
 export async function GET() {
+  if (isStatelessDemoMode()) {
+    return NextResponse.json({
+      connection: {
+        id: "stateless-demo",
+        name: "Demo AWS",
+        mode: "demo",
+        regions: ["us-east-1", "us-east-2"],
+        costExplorerEnabled: false,
+        credentials: { configured: false, last4: null },
+        envAwsAvailable: false,
+        publicDemoLocked: true,
+      },
+    });
+  }
+
   try {
     const conn = await getOrCreatePrimaryConnection();
     let maskedAccessKey = { configured: false, last4: null as string | null };

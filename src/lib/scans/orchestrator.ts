@@ -9,9 +9,13 @@ import {
   ruleFindings,
   scanRuns,
 } from "@/db";
-import { getDemoAwsResources } from "@/lib/aws/demo-provider";
+import {
+  buildStatelessDemoDashboard,
+  getDemoAwsResources,
+} from "@/lib/aws/demo-provider";
 import { scanLiveAwsAccount, type AwsClientCredentials } from "@/lib/aws/scanner";
 import { decryptSecret } from "@/lib/crypto";
+import { isStatelessDemoMode } from "@/lib/security/guards";
 import {
   ORPHANED_PROJECT_LABEL,
   ORPHANED_PROJECT_SLUG,
@@ -47,16 +51,21 @@ export async function getOrCreatePrimaryConnection() {
 
   if (existing) return existing;
 
-  const isDemo = (process.env.DEMO_MODE ?? "true").toLowerCase() !== "false";
+  const dbUrl = process.env.DATABASE_URL?.trim() ?? "";
+  const isRemotePostgres =
+    dbUrl.startsWith("postgres://") || dbUrl.startsWith("postgresql://");
+  const explicitDemo = process.env.DEMO_MODE?.trim().toLowerCase();
+  const useDemo =
+    explicitDemo === "true" || (explicitDemo !== "false" && !isRemotePostgres);
   const hasEnvAws = Boolean(
     process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY,
   );
-  const mode = !isDemo && hasEnvAws ? "env_default" : "demo";
+  const mode = useDemo ? "demo" : hasEnvAws ? "env_default" : "iam_keys";
 
   const [created] = await db
     .insert(awsConnections)
     .values({
-      name: mode === "demo" ? "Portfolio Demo AWS" : "Primary AWS",
+      name: mode === "demo" ? "Demo AWS" : "Primary AWS",
       mode,
       regions: ["us-east-1", "us-east-2", "us-west-2"],
       costExplorerEnabled: false,
@@ -90,6 +99,27 @@ export async function triggerScan(params: {
   connectionId?: string;
   idempotencyKey: string;
 }) {
+  if (isStatelessDemoMode()) {
+    const demo = buildStatelessDemoDashboard();
+    return {
+      scanRun: {
+        id: demo.latestScan?.id ?? "stateless-demo-scan",
+        connectionId: demo.connection.id,
+        idempotencyKey: params.idempotencyKey,
+        status: "completed" as const,
+        regionsScanned: demo.connection.regions,
+        resourceCount: demo.latestScan?.resourceCount ?? 0,
+        totalMonthlyCents: demo.latestScan?.totalMonthlyCents ?? 0,
+        potentialSavingsCents: demo.latestScan?.potentialSavingsCents ?? 0,
+        errorMessage: null,
+        startedAt: new Date(),
+        completedAt: new Date(),
+      },
+      deduplicated: false,
+      warnings: [] as string[],
+    };
+  }
+
   const db = await ensureDbReady();
   const conn = params.connectionId
     ? (
@@ -348,6 +378,10 @@ export interface DashboardPayload {
 }
 
 export async function getDashboardData(autoSeedDemo = true): Promise<DashboardPayload> {
+  if (isStatelessDemoMode()) {
+    return buildStatelessDemoDashboard();
+  }
+
   const db = await ensureDbReady();
   const conn = await getOrCreatePrimaryConnection();
 

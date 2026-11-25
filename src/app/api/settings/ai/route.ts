@@ -4,7 +4,10 @@ import { aiProviderConfigs, ensureDbReady } from "@/db";
 import { DEFAULT_GEMINI_MODEL } from "@/lib/ai/providers/gemini";
 import { DEFAULT_GROQ_MODEL } from "@/lib/ai/providers/groq";
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/crypto";
-import { blockIfPublicDemoLocked } from "@/lib/security/guards";
+import {
+  blockIfPublicDemoLocked,
+  isStatelessDemoMode,
+} from "@/lib/security/guards";
 
 const SaveAiSettingsSchema = z.object({
   geminiApiKey: z.string().trim().optional(),
@@ -18,6 +21,25 @@ const SaveAiSettingsSchema = z.object({
 });
 
 export async function GET() {
+  if (isStatelessDemoMode()) {
+    return NextResponse.json({
+      gemini: {
+        configured: false,
+        last4: null,
+        source: "none",
+        modelId: DEFAULT_GEMINI_MODEL,
+      },
+      groq: {
+        configured: false,
+        last4: null,
+        source: "none",
+        modelId: DEFAULT_GROQ_MODEL,
+      },
+      defaultProvider: "auto",
+      fallbackEnabled: true,
+    });
+  }
+
   try {
     const db = await ensureDbReady();
     const rows = await db.select().from(aiProviderConfigs);

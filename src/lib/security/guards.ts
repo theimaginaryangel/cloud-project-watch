@@ -4,7 +4,26 @@ export const PUBLIC_DEMO_LOCK_MESSAGE =
   "Public demo is read-only. Self-host or deploy your own copy to connect AWS credentials, API keys, or custom rules.";
 
 export function isPublicDemoLocked(): boolean {
-  return (process.env.PUBLIC_DEMO_LOCK ?? "false").trim().toLowerCase() === "true";
+  if ((process.env.PUBLIC_DEMO_LOCK ?? "false").trim().toLowerCase() === "true") {
+    return true;
+  }
+  // On Vercel without a DATABASE_URL, automatically run as a read-only zero-DB public demo.
+  if (Boolean(process.env.VERCEL) && !process.env.DATABASE_URL?.trim()) {
+    return true;
+  }
+  return false;
+}
+
+export function isStatelessDemoMode(): boolean {
+  if (isPublicDemoLocked()) return true;
+  if (
+    !process.env.DATABASE_URL?.trim() &&
+    (process.env.DEMO_MODE ?? "true").trim().toLowerCase() === "true" &&
+    Boolean(process.env.VERCEL)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function blockIfPublicDemoLocked(): NextResponse | null {

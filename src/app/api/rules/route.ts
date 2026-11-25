@@ -4,7 +4,10 @@ import { z } from "zod";
 import { ensureDbReady, projectRules } from "@/db";
 import { humanizeProjectLabel, slugifyProject } from "@/lib/domain/types";
 import { getOrCreatePrimaryConnection, triggerScan } from "@/lib/scans/orchestrator";
-import { blockIfPublicDemoLocked } from "@/lib/security/guards";
+import {
+  blockIfPublicDemoLocked,
+  isStatelessDemoMode,
+} from "@/lib/security/guards";
 
 const CreateRuleSchema = z.object({
   ruleType: z.enum(["arn_override", "tag_key", "name_prefix"]),
@@ -18,6 +21,10 @@ const DeleteRuleSchema = z.object({
 });
 
 export async function GET() {
+  if (isStatelessDemoMode()) {
+    return NextResponse.json({ rules: [] });
+  }
+
   try {
     const db = await ensureDbReady();
     const conn = await getOrCreatePrimaryConnection();

@@ -5,7 +5,10 @@ import {
   getOrCreatePrimaryConnection,
   resolveAwsCredentialsFromConnection,
 } from "@/lib/scans/orchestrator";
-import { blockIfPublicDemoLocked } from "@/lib/security/guards";
+import {
+  blockIfPublicDemoLocked,
+  isStatelessDemoMode,
+} from "@/lib/security/guards";
 
 const TestConnectionSchema = z.object({
   mode: z.enum(["demo", "iam_keys", "env_default"]).optional(),
@@ -20,6 +23,19 @@ export async function POST(request: Request) {
     const parsed = TestConnectionSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid test payload." }, { status: 400 });
+    }
+
+    if (isStatelessDemoMode()) {
+      if ((parsed.data.mode ?? "demo") === "demo") {
+        return NextResponse.json({
+          ok: true,
+          accountId: "123456789012",
+          arn: "arn:aws:iam::123456789012:user/cloudprojectwatch-demo",
+          message: "Demo mode active — zero AWS credentials required.",
+        });
+      }
+      const locked = blockIfPublicDemoLocked();
+      if (locked) return locked;
     }
 
     const conn = await getOrCreatePrimaryConnection();

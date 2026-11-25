@@ -37,8 +37,8 @@ Open `http://localhost:3000`.
 
 Each self-hosted user owns their own PostgreSQL database and `APP_ENCRYPTION_KEY`. Keys saved in Settings are encrypted with AES-256-GCM and are never returned to the browser.
 
-- **Private personal deployment:** Set `DATABASE_URL` (Neon/Supabase), `APP_ENCRYPTION_KEY`, `DEMO_MODE="false"`, and `OWNER_PASSWORD` (enables HTTP Basic Auth across all routes).
-- **Public portfolio demo:** Set `DEMO_MODE="true"` and `PUBLIC_DEMO_LOCK="true"` so visitors can explore every screen freely while key/settings mutations are blocked (`403`).
+- **Public portfolio demo (zero database needed):** Deploy directly on Vercel with **no `DATABASE_URL`** (or set `PUBLIC_DEMO_LOCK="true"`). It runs completely stateless in memory with realistic demo data, and blocks saving keys (`403`).
+- **Private personal tracker (real AWS account):** Attach a PostgreSQL `DATABASE_URL` (Neon/Supabase) + `APP_ENCRYPTION_KEY` + `OWNER_PASSWORD` (HTTP Basic Auth). As soon as a Postgres `DATABASE_URL` is attached, demo mode automatically turns off so the dashboard reflects your real AWS account.
 
 ### Using PostgreSQL (Docker, Neon, or Supabase)
 

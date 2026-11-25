@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai/providers/groq";
 import { getDemoRecommendations } from "@/lib/aws/demo-provider";
 import { decryptSecret } from "@/lib/crypto";
+import { isStatelessDemoMode } from "@/lib/security/guards";
 import type {
   AiProviderId,
   AiProviderPreference,
@@ -242,8 +243,23 @@ export async function generateOrFetchRecommendations(params: {
   preferredProvider?: AiProviderPreference;
   forceRefresh?: boolean;
 }): Promise<AdvisorResponse> {
-  const db = await ensureDbReady();
   const snapshotHash = computeProjectSnapshotHash(params.projectSlug, params.resources);
+
+  if (isStatelessDemoMode()) {
+    const demoProvider: AiProviderId =
+      params.preferredProvider === "groq" ? "groq" : "gemini";
+    return {
+      source: "demo",
+      provider: demoProvider,
+      modelId: demoProvider === "groq" ? DEFAULT_GROQ_MODEL : DEFAULT_GEMINI_MODEL,
+      usedFallback: false,
+      snapshotHash,
+      plan: getDemoRecommendations(params.projectSlug),
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  const db = await ensureDbReady();
   const creds = await resolveAiCredentials();
   const preferred = params.preferredProvider ?? creds.defaultProvider;
 

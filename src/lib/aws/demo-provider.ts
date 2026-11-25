@@ -1,7 +1,13 @@
-import type {
-  CostRecommendationPlan,
-  DiscoveredAwsResource,
+import {
+  ORPHANED_PROJECT_LABEL,
+  ORPHANED_PROJECT_SLUG,
+  type AwsService,
+  type CostRecommendationPlan,
+  type DiscoveredAwsResource,
 } from "@/lib/domain/types";
+import { groupAndPriceResources } from "@/lib/grouping/project-grouper";
+import { evaluateCostRules } from "@/lib/rules/cost-rules";
+import type { DashboardPayload, ProjectSummaryDto } from "@/lib/scans/orchestrator";
 
 export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResource[] {
   const fiveDaysAgoIso = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
@@ -309,5 +315,159 @@ export function getDemoRecommendations(
         terraformSnippet: `ebs_block_device {\n  delete_on_termination = true\n}`,
       },
     ],
+  };
+}
+
+export function buildStatelessDemoDashboard(now: Date = new Date()): DashboardPayload {
+  const discovered = getDemoAwsResources(now);
+  const priced = groupAndPriceResources(discovered, []);
+  const findings = evaluateCostRules(priced, now);
+
+  const totalMonthlyCents = priced.reduce((sum, r) => sum + r.monthlyCents, 0);
+  const potentialSavingsCents = findings.reduce(
+    (sum, f) => sum + f.estimatedMonthlySavingsCents,
+    0,
+  );
+
+  const bucketMap = new Map<
+    string,
+    {
+      slug: string;
+      label: string;
+      resourceCount: number;
+      monthlyCents: number;
+      potentialSavingsCents: number;
+      findingCount: number;
+      criticalCount: number;
+      services: Set<AwsService>;
+    }
+  >();
+
+  for (const r of priced) {
+    const existing = bucketMap.get(r.projectSlug) ?? {
+      slug: r.projectSlug,
+      label:
+        r.projectSlug === ORPHANED_PROJECT_SLUG ? ORPHANED_PROJECT_LABEL : r.projectLabel,
+      resourceCount: 0,
+      monthlyCents: 0,
+      potentialSavingsCents: 0,
+      findingCount: 0,
+      criticalCount: 0,
+      services: new Set<AwsService>(),
+    };
+    existing.resourceCount += 1;
+    existing.monthlyCents += r.monthlyCents;
+    existing.services.add(r.service);
+    bucketMap.set(r.projectSlug, existing);
+  }
+
+  for (const f of findings) {
+    const existing = bucketMap.get(f.projectSlug);
+    if (existing) {
+      existing.findingCount += 1;
+      existing.potentialSavingsCents += f.estimatedMonthlySavingsCents;
+      if (f.severity === "critical") existing.criticalCount += 1;
+    }
+  }
+
+  const projects: ProjectSummaryDto[] = [...bucketMap.values()]
+    .map((b) => ({
+      slug: b.slug,
+      label: b.label,
+      isOrphaned: b.slug === ORPHANED_PROJECT_SLUG,
+      resourceCount: b.resourceCount,
+      monthlyCents: b.monthlyCents,
+      potentialSavingsCents: b.potentialSavingsCents,
+      findingCount: b.findingCount,
+      criticalCount: b.criticalCount,
+      services: [...b.services],
+    }))
+    .sort((a, b) => {
+      if (a.isOrphaned && !b.isOrphaned) return -1;
+      if (!a.isOrphaned && b.isOrphaned) return 1;
+      return b.monthlyCents - a.monthlyCents;
+    });
+
+  const mappedFindings = findings.map((f, idx) => ({
+    id: `demo-finding-${idx}`,
+    resourceId: f.resourceId,
+    resourceArn: f.resourceArn,
+    projectSlug: f.projectSlug,
+    ruleCode: f.ruleCode,
+    severity: f.severity,
+    title: f.title,
+    description: f.description,
+    estimatedMonthlySavingsCents: f.estimatedMonthlySavingsCents,
+    cliCommand: f.cliCommand,
+    terraformHint: f.terraformHint,
+    keepsAppLive: f.keepsAppLive,
+  }));
+
+  const urgentAlerts = mappedFindings
+    .filter(
+      (f) =>
+        f.severity === "critical" ||
+        f.ruleCode === "RDS_7DAY_AUTORESTART" ||
+        f.ruleCode === "UNATTACHED_EIP" ||
+        f.ruleCode === "ORPHANED_EBS",
+    )
+    .sort((a, b) => b.estimatedMonthlySavingsCents - a.estimatedMonthlySavingsCents)
+    .slice(0, 6)
+    .map((f) => ({
+      id: f.id,
+      projectSlug: f.projectSlug,
+      resourceId: f.resourceId,
+      ruleCode: f.ruleCode,
+      severity: f.severity,
+      title: f.title,
+      description: f.description,
+      estimatedMonthlySavingsCents: f.estimatedMonthlySavingsCents,
+      cliCommand: f.cliCommand,
+    }));
+
+  const isoNow = now.toISOString();
+
+  return {
+    connection: {
+      id: "stateless-demo",
+      name: "Demo AWS",
+      mode: "demo",
+      regions: ["us-east-1", "us-east-2"],
+      costExplorerEnabled: false,
+    },
+    latestScan: {
+      id: "stateless-demo-scan",
+      status: "completed",
+      resourceCount: priced.length,
+      totalMonthlyCents,
+      potentialSavingsCents,
+      completedAt: isoNow,
+      startedAt: isoNow,
+    },
+    projects,
+    urgentAlerts,
+    findings: mappedFindings,
+    resources: priced.map((r, idx) => ({
+      id: `demo-res-${idx}`,
+      arn: r.arn,
+      resourceId: r.resourceId,
+      service: r.service,
+      region: r.region,
+      name: r.name,
+      state: r.state,
+      projectSlug: r.projectSlug,
+      projectLabel: r.projectLabel,
+      projectSource: r.projectSource,
+      hourlyMicrocents: r.hourlyMicrocents,
+      monthlyCents: r.monthlyCents,
+      tags: r.tags,
+      metadata: r.metadata,
+    })),
+    costExplorer: null,
+    aiStatus: {
+      geminiConfigured: false,
+      groqConfigured: false,
+      defaultProvider: "auto",
+    },
   };
 }

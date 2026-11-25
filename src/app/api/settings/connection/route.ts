@@ -7,6 +7,10 @@ import {
   getOrCreatePrimaryConnection,
   type StoredAwsCredsPayload,
 } from "@/lib/scans/orchestrator";
+import {
+  blockIfPublicDemoLocked,
+  isPublicDemoLocked,
+} from "@/lib/security/guards";
 
 const UpdateConnectionSchema = z.object({
   name: z.string().min(1).max(80).optional(),
@@ -44,6 +48,7 @@ export async function GET() {
         envAwsAvailable: Boolean(
           process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY,
         ),
+        publicDemoLocked: isPublicDemoLocked(),
       },
     });
   } catch (err) {
@@ -53,6 +58,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const locked = blockIfPublicDemoLocked();
+  if (locked) return locked;
+
   try {
     const body: unknown = await request.json();
     const parsed = UpdateConnectionSchema.safeParse(body);

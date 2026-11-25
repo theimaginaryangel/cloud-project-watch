@@ -43,6 +43,7 @@ interface ConnectionSettingsState {
   costExplorerEnabled: boolean;
   credentials: { configured: boolean; last4: string | null };
   envAwsAvailable: boolean;
+  publicDemoLocked?: boolean;
 }
 
 interface AiSettingsState {
@@ -357,6 +358,7 @@ export function SettingsView() {
   }
 
   const iamPolicyJson = getReadOnlyPolicyJson(conn.costExplorerEnabled);
+  const demoLocked = Boolean(conn.publicDemoLocked);
 
   return (
     <div className="flex flex-col gap-8">
@@ -367,6 +369,24 @@ export function SettingsView() {
           rules. Keys are encrypted with AES-256-GCM.
         </p>
       </div>
+
+      {demoLocked ? (
+        <div className="glass-panel rounded-2xl px-6 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Public demo mode is read-only so visitor keys are never stored in a shared database.
+            Deploy your own copy to connect AWS and API keys.
+          </p>
+          <Button variant="outline" size="sm" asChild className="rounded-full shrink-0 w-fit">
+            <a
+              href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftheimaginaryangel%2Fcloud-project-watch&env=DATABASE_URL,APP_ENCRYPTION_KEY,OWNER_PASSWORD"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Deploy your own
+            </a>
+          </Button>
+        </div>
+      ) : null}
 
       <Tabs defaultValue="aws">
         <TabsList>
@@ -500,7 +520,7 @@ export function SettingsView() {
                   variant="ghost"
                   size="sm"
                   onClick={() => void handleSaveAws(false)}
-                  disabled={savingAws}
+                  disabled={savingAws || demoLocked}
                   className="rounded-full"
                 >
                   Save
@@ -509,7 +529,7 @@ export function SettingsView() {
                   type="button"
                   size="sm"
                   onClick={() => void handleSaveAws(true)}
-                  disabled={savingAws}
+                  disabled={savingAws || demoLocked}
                   className="rounded-full press-feedback"
                 >
                   {savingAws ? <Spinner data-icon="inline-start" /> : null}
@@ -657,7 +677,7 @@ export function SettingsView() {
                 type="button"
                 size="sm"
                 onClick={() => void handleSaveAi()}
-                disabled={savingAi}
+                disabled={savingAi || demoLocked}
                 className="rounded-full px-5 press-feedback"
               >
                 {savingAi ? <Spinner data-icon="inline-start" /> : null}
@@ -723,7 +743,11 @@ export function SettingsView() {
                   />
                 </Field>
 
-                <Button type="submit" disabled={savingRule} className="rounded-full">
+                <Button
+                  type="submit"
+                  disabled={savingRule || demoLocked}
+                  className="rounded-full"
+                >
                   {savingRule ? (
                     <Spinner data-icon="inline-start" />
                   ) : (

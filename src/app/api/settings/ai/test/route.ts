@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveAiCredentials } from "@/lib/ai/advisor";
 import { verifyGeminiApiKey } from "@/lib/ai/providers/gemini";
 import { verifyGroqApiKey } from "@/lib/ai/providers/groq";
+import { blockIfPublicDemoLocked } from "@/lib/security/guards";
 
 const TestAiSchema = z.object({
   provider: z.enum(["gemini", "groq"]),
@@ -11,6 +12,9 @@ const TestAiSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const locked = blockIfPublicDemoLocked();
+  if (locked) return locked;
+
   try {
     const body: unknown = await request.json();
     const parsed = TestAiSchema.safeParse(body);

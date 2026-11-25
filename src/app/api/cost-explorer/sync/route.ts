@@ -4,8 +4,12 @@ import {
   getOrCreatePrimaryConnection,
   resolveAwsCredentialsFromConnection,
 } from "@/lib/scans/orchestrator";
+import { blockIfPublicDemoLocked } from "@/lib/security/guards";
 
 export async function POST() {
+  const locked = blockIfPublicDemoLocked();
+  if (locked) return locked;
+
   try {
     const conn = await getOrCreatePrimaryConnection();
     if (conn.mode === "demo") {

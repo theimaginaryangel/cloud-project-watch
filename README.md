@@ -19,6 +19,8 @@ CloudProjectWatch checks your live AWS resources using free `Describe*` and `Res
 
 ## Quick start
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftheimaginaryangel%2Fcloud-project-watch&env=DATABASE_URL,APP_ENCRYPTION_KEY,OWNER_PASSWORD)
+
 CloudProjectWatch ships with an embedded local PostgreSQL database (`PGlite`) and demo data so you can run it immediately without Docker.
 
 ```bash
@@ -30,6 +32,13 @@ npm run dev
 ```
 
 Open `http://localhost:3000`.
+
+### Deployment & Key Security
+
+Each self-hosted user owns their own PostgreSQL database and `APP_ENCRYPTION_KEY`. Keys saved in Settings are encrypted with AES-256-GCM and are never returned to the browser.
+
+- **Private personal deployment:** Set `DATABASE_URL` (Neon/Supabase), `APP_ENCRYPTION_KEY`, `DEMO_MODE="false"`, and `OWNER_PASSWORD` (enables HTTP Basic Auth across all routes).
+- **Public portfolio demo:** Set `DEMO_MODE="true"` and `PUBLIC_DEMO_LOCK="true"` so visitors can explore every screen freely while key/settings mutations are blocked (`403`).
 
 ### Using PostgreSQL (Docker, Neon, or Supabase)
 

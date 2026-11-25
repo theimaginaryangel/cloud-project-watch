@@ -4,6 +4,7 @@ import { z } from "zod";
 import { ensureDbReady, projectRules } from "@/db";
 import { humanizeProjectLabel, slugifyProject } from "@/lib/domain/types";
 import { getOrCreatePrimaryConnection, triggerScan } from "@/lib/scans/orchestrator";
+import { blockIfPublicDemoLocked } from "@/lib/security/guards";
 
 const CreateRuleSchema = z.object({
   ruleType: z.enum(["arn_override", "tag_key", "name_prefix"]),
@@ -33,6 +34,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const locked = blockIfPublicDemoLocked();
+  if (locked) return locked;
+
   try {
     const body: unknown = await request.json();
     const parsed = CreateRuleSchema.safeParse(body);
@@ -82,6 +86,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const locked = blockIfPublicDemoLocked();
+  if (locked) return locked;
+
   try {
     const body: unknown = await request.json();
     const parsed = DeleteRuleSchema.safeParse(body);

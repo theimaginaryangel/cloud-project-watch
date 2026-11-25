@@ -5,6 +5,7 @@ import {
   getOrCreatePrimaryConnection,
   resolveAwsCredentialsFromConnection,
 } from "@/lib/scans/orchestrator";
+import { blockIfPublicDemoLocked } from "@/lib/security/guards";
 
 const TestConnectionSchema = z.object({
   mode: z.enum(["demo", "iam_keys", "env_default"]).optional(),
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
         message: "Demo Mode active — zero AWS credentials required.",
       });
     }
+
+    const locked = blockIfPublicDemoLocked();
+    if (locked) return locked;
 
     const credentials =
       parsed.data.accessKeyId && parsed.data.secretAccessKey

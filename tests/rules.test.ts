@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { getDemoAwsResources } from "@/lib/aws/demo-provider";
 import { ORPHANED_PROJECT_SLUG, type DiscoveredAwsResource } from "@/lib/domain/types";
 import { groupAndPriceResources } from "@/lib/grouping/project-grouper";
-import { evaluateZombieRules } from "@/lib/rules/zombie-engine";
+import { evaluateCostRules } from "@/lib/rules/cost-rules";
 
-describe("Retroactive 4-layer project grouping & zombie rule engine", () => {
+describe("Retroactive 4-layer project grouping & cost rule engine", () => {
   it("enforces priority: arn_override > tag > prefix > parent > __orphaned__", () => {
     const resources: DiscoveredAwsResource[] = [
       {
@@ -79,11 +79,11 @@ describe("Retroactive 4-layer project grouping & zombie rule engine", () => {
     expect(byId.get("eipalloc-orphan")?.projectSource).toBe("orphaned");
   });
 
-  it("detects all key zombie & surgical optimization rules on Demo Mode resources", () => {
+  it("detects all idle and cost-saving rules on Demo Mode resources", () => {
     const fixedNow = new Date("2026-11-25T12:00:00Z");
     const demo = getDemoAwsResources(fixedNow);
     const priced = groupAndPriceResources(demo, []);
-    const findings = evaluateZombieRules(priced, fixedNow);
+    const findings = evaluateCostRules(priced, fixedNow);
 
     const codes = new Set(findings.map((f) => f.ruleCode));
     expect(codes.has("UNATTACHED_EIP")).toBe(true);

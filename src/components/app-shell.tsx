@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: Layers },
-  { href: "/zombies", label: "Untagged", icon: FolderKanban },
+  { href: "/untagged", label: "Untagged", icon: FolderKanban },
   { href: "/settings", label: "Settings", icon: SlidersHorizontal },
 ] as const;
 

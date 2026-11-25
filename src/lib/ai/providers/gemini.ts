@@ -1,13 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
-import { SurgicalPlanSchema, type SurgicalPlan } from "@/lib/domain/types";
+import {
+  CostRecommendationPlanSchema,
+  type CostRecommendationPlan,
+} from "@/lib/domain/types";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
-export async function generateGeminiSurgicalPlan(params: {
+export async function generateGeminiRecommendations(params: {
   apiKey: string;
   modelId?: string;
   prompt: string;
-}): Promise<{ plan: SurgicalPlan; modelId: string }> {
+}): Promise<{ plan: CostRecommendationPlan; modelId: string }> {
   const modelId = params.modelId?.trim() || DEFAULT_GEMINI_MODEL;
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
 
@@ -33,7 +36,7 @@ export async function generateGeminiSurgicalPlan(params: {
   }
 
   const parsed: unknown = JSON.parse(rawText);
-  const validated = SurgicalPlanSchema.parse(parsed);
+  const validated = CostRecommendationPlanSchema.parse(parsed);
   return { plan: validated, modelId };
 }
 

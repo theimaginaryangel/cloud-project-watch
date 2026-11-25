@@ -5,53 +5,53 @@ import postgres from "postgres";
 import { BOOTSTRAP_SQL } from "./bootstrap";
 import * as schema from "./schema";
 
-export type TagWatchDb =
+export type CloudProjectWatchDb =
   | PostgresJsDatabase<typeof schema>
   | PgliteDatabase<typeof schema>;
 
 const globalForDb = globalThis as unknown as {
-  tagwatchSql?: ReturnType<typeof postgres>;
-  tagwatchPglite?: PGlite;
-  tagwatchDb?: TagWatchDb;
-  tagwatchBootstrapped?: Promise<void>;
+  cpwSql?: ReturnType<typeof postgres>;
+  cpwPglite?: PGlite;
+  cpwDb?: CloudProjectWatchDb;
+  cpwBootstrapped?: Promise<void>;
 };
 
-let testOverrideDb: TagWatchDb | null = null;
+let testOverrideDb: CloudProjectWatchDb | null = null;
 
-export function setDbForTests(db: TagWatchDb | null) {
+export function setDbForTests(db: CloudProjectWatchDb | null) {
   testOverrideDb = db;
 }
 
 function getDatabaseUrl(): string {
-  return process.env.DATABASE_URL?.trim() || "pglite://.tagwatch-data";
+  return process.env.DATABASE_URL?.trim() || "pglite://.cpw-data";
 }
 
 function isPgliteUrl(url: string): boolean {
   return url.startsWith("pglite://") || url === "memory://";
 }
 
-export async function ensureDbReady(): Promise<TagWatchDb> {
+export async function ensureDbReady(): Promise<CloudProjectWatchDb> {
   if (testOverrideDb) return testOverrideDb;
 
   const db = getDb();
 
-  if (!globalForDb.tagwatchBootstrapped) {
-    globalForDb.tagwatchBootstrapped = (async () => {
-      if (globalForDb.tagwatchPglite) {
-        await globalForDb.tagwatchPglite.exec(BOOTSTRAP_SQL);
-      } else if (globalForDb.tagwatchSql) {
-        await globalForDb.tagwatchSql.unsafe(BOOTSTRAP_SQL);
+  if (!globalForDb.cpwBootstrapped) {
+    globalForDb.cpwBootstrapped = (async () => {
+      if (globalForDb.cpwPglite) {
+        await globalForDb.cpwPglite.exec(BOOTSTRAP_SQL);
+      } else if (globalForDb.cpwSql) {
+        await globalForDb.cpwSql.unsafe(BOOTSTRAP_SQL);
       }
     })();
   }
 
-  await globalForDb.tagwatchBootstrapped;
+  await globalForDb.cpwBootstrapped;
   return db;
 }
 
-export function getDb(): TagWatchDb {
+export function getDb(): CloudProjectWatchDb {
   if (testOverrideDb) return testOverrideDb;
-  if (globalForDb.tagwatchDb) return globalForDb.tagwatchDb;
+  if (globalForDb.cpwDb) return globalForDb.cpwDb;
 
   const url = getDatabaseUrl();
 
@@ -59,8 +59,8 @@ export function getDb(): TagWatchDb {
     const dataDir = url === "memory://" ? undefined : url.replace(/^pglite:\/\//, "");
     const pglite = new PGlite(dataDir);
     const db = drizzlePglite(pglite, { schema });
-    globalForDb.tagwatchPglite = pglite;
-    globalForDb.tagwatchDb = db;
+    globalForDb.cpwPglite = pglite;
+    globalForDb.cpwDb = db;
     return db;
   }
 
@@ -71,8 +71,8 @@ export function getDb(): TagWatchDb {
   });
 
   const db = drizzlePg(sqlClient, { schema });
-  globalForDb.tagwatchSql = sqlClient;
-  globalForDb.tagwatchDb = db;
+  globalForDb.cpwSql = sqlClient;
+  globalForDb.cpwDb = db;
   return db;
 }
 

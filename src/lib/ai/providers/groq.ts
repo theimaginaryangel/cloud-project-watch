@@ -1,13 +1,16 @@
 import Groq from "groq-sdk";
-import { SurgicalPlanSchema, type SurgicalPlan } from "@/lib/domain/types";
+import {
+  CostRecommendationPlanSchema,
+  type CostRecommendationPlan,
+} from "@/lib/domain/types";
 
 export const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
 
-export async function generateGroqSurgicalPlan(params: {
+export async function generateGroqRecommendations(params: {
   apiKey: string;
   modelId?: string;
   prompt: string;
-}): Promise<{ plan: SurgicalPlan; modelId: string }> {
+}): Promise<{ plan: CostRecommendationPlan; modelId: string }> {
   const modelId = params.modelId?.trim() || DEFAULT_GROQ_MODEL;
   const groq = new Groq({ apiKey: params.apiKey, timeout: 15_000 });
 
@@ -19,7 +22,7 @@ export async function generateGroqSurgicalPlan(params: {
       {
         role: "system",
         content:
-          "You are a senior AWS FinOps architect. Always return ONLY valid JSON matching the exact requested schema. Never recommend terraform destroy when a non-destructive surgical fix keeps the live app online.",
+          "You are a senior AWS infrastructure engineer. Return ONLY valid JSON matching the exact requested schema. Never recommend terraform destroy when a non-destructive change keeps the app online.",
       },
       {
         role: "user",
@@ -34,7 +37,7 @@ export async function generateGroqSurgicalPlan(params: {
   }
 
   const parsed: unknown = JSON.parse(rawText);
-  const validated = SurgicalPlanSchema.parse(parsed);
+  const validated = CostRecommendationPlanSchema.parse(parsed);
   return { plan: validated, modelId };
 }
 

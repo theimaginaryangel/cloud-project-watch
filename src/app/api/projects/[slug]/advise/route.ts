@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateOrFetchSurgicalPlan } from "@/lib/ai/advisor";
+import { generateOrFetchRecommendations } from "@/lib/ai/advisor";
 import type { ComputedRuleFinding, PricedResourceSnapshot } from "@/lib/domain/types";
 import { getDashboardData } from "@/lib/scans/orchestrator";
 
@@ -66,7 +66,7 @@ export async function POST(
         keepsAppLive: f.keepsAppLive,
       }));
 
-    const result = await generateOrFetchSurgicalPlan({
+    const result = await generateOrFetchRecommendations({
       connectionId: data.connection.id,
       connectionMode: data.connection.mode,
       projectSlug: project.slug,
@@ -80,7 +80,7 @@ export async function POST(
     return NextResponse.json(result);
   } catch (err) {
     const message =
-      err instanceof Error ? err.message : "Failed to generate surgical AI plan.";
+      err instanceof Error ? err.message : "Failed to generate cost recommendations.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

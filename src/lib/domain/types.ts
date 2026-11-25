@@ -81,7 +81,7 @@ export interface ComputedRuleFinding {
   keepsAppLive: boolean;
 }
 
-export const SurgicalActionSchema = z.object({
+export const CostRecommendationActionSchema = z.object({
   title: z.string().min(3).max(160),
   targetResourceId: z.string().min(1),
   estimatedMonthlySavingsCents: z.number().int().min(0),
@@ -93,15 +93,15 @@ export const SurgicalActionSchema = z.object({
   terraformSnippet: z.string().min(3),
 });
 
-export const SurgicalPlanSchema = z.object({
+export const CostRecommendationPlanSchema = z.object({
   summary: z.string().min(10).max(500),
   keepsAppLive: z.boolean(),
   totalEstimatedMonthlySavingsCents: z.number().int().min(0),
-  actions: z.array(SurgicalActionSchema).min(1).max(8),
+  actions: z.array(CostRecommendationActionSchema).min(1).max(8),
 });
 
-export type SurgicalAction = z.infer<typeof SurgicalActionSchema>;
-export type SurgicalPlan = z.infer<typeof SurgicalPlanSchema>;
+export type CostRecommendationAction = z.infer<typeof CostRecommendationActionSchema>;
+export type CostRecommendationPlan = z.infer<typeof CostRecommendationPlanSchema>;
 
 export type AiProviderId = "gemini" | "groq";
 export type AiProviderPreference = AiProviderId | "auto";

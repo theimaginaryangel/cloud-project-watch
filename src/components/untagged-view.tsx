@@ -34,7 +34,7 @@ import {
 import { buildTagResourcesCli } from "@/lib/grouping/project-grouper";
 import type { DashboardPayload } from "@/lib/scans/orchestrator";
 
-export function ZombiesView() {
+export function UntaggedView() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

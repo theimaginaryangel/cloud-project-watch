@@ -1,15 +1,15 @@
-# 01 — Product Requirements Document (PRD)
+# 01 - Product Requirements Document (PRD)
 
 ## Problem & Target User
-Indie engineers, agencies, and small cloud teams run multiple apps in one AWS account. AWS groups bills by service (RDS, EC2, Secrets Manager), not by project, and half-failed Terraform deployments silently leave orphaned resources burning $100–$400/mo. Running `terraform destroy` kills live portfolio demos and production apps.
+Indie engineers, agencies, and small cloud teams run multiple apps in one AWS account. AWS groups bills by service (RDS, EC2, Secrets Manager), not by project, and incomplete deploys can quietly leave unused resources running. Running `terraform destroy` takes live demos and production apps offline.
 
-## Core Message (≤ 2-Minute Comprehension)
-**See which AWS project is burning money, catch untagged zombies automatically, and cut cost surgically without taking your live apps offline.**
+## Core Message
+See which AWS project is costing money, spot untagged or idle resources, and reduce your monthly bill without shutting down running apps.
 
-## MVP Scope (v1 — Strictly Read-Only)
-1. **Zero-Cost Discovery:** Scan live EC2, EBS, EIP, NAT Gateway, RDS, Secrets Manager, and ALB/NLB resources via free `Describe*` + `ResourceGroupsTaggingAPI`.
-2. **Retroactive Project Grouping:** 4-layer cascade (`arn_override` → `tag_key` incl. `aws:cloudformation:stack-name` → `name_prefix` & parent attachment → `__orphaned__`).
-3. **Instant $0 Zombie Rule Engine:** Catch 8 high-value waste patterns immediately on every scan.
-4. **Dual BYOK AI Surgical Advisor:** Generate non-destructive optimization plans using user's **Gemini** and/or **Groq** API keys (with auto-fallback and snapshot-hash caching).
-5. **Zero-Friction Onboarding + Demo Mode:** 1-click CloudFormation read-only IAM template, copyable IAM Policy JSON, copyable `tag-resources` & Terraform `default_tags` snippets, plus preloaded Demo Mode.
-6. **Optional 24h Cost Explorer Sync:** Hard-capped at 1 request per 24 hours (`max $0.30/mo`).
+## MVP Scope (v1 - Read-Only)
+1. **Free Discovery:** Scan live EC2, EBS, EIP, NAT Gateway, RDS, Secrets Manager, and ALB/NLB resources via free `Describe*` and `ResourceGroupsTaggingAPI`.
+2. **Retroactive Project Grouping:** 4-layer cascade (`arn_override` -> `tag_key` incl. `aws:cloudformation:stack-name` -> `name_prefix` & parent attachment -> `__orphaned__`).
+3. **Automatic Checks:** Catch 8 common idle/over-provisioned patterns on every scan at $0 cost.
+4. **Optional Gemini and Groq Suggestions (BYOK):** Generate non-destructive AWS CLI and Terraform recommendations using user's own Gemini and/or Groq API keys (with fallback and snapshot caching).
+5. **Read-Only Onboarding + Demo Mode:** Downloadable CloudFormation read-only IAM template, minimal IAM Policy JSON, 1-click Open in AWS Console links, copyable `tag-resources` & Terraform `default_tags` snippets, and built-in demo data.
+6. **Optional 24h Cost Explorer Sync:** Hard-capped at 1 request per 24 hours (max $0.30/month).

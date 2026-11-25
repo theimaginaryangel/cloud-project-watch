@@ -3,20 +3,20 @@ import { and, eq } from "drizzle-orm";
 import { aiProviderConfigs, aiRecommendations, ensureDbReady } from "@/db";
 import {
   DEFAULT_GEMINI_MODEL,
-  generateGeminiSurgicalPlan,
+  generateGeminiRecommendations,
 } from "@/lib/ai/providers/gemini";
 import {
   DEFAULT_GROQ_MODEL,
-  generateGroqSurgicalPlan,
+  generateGroqRecommendations,
 } from "@/lib/ai/providers/groq";
-import { getDemoSurgicalPlan } from "@/lib/aws/demo-provider";
+import { getDemoRecommendations } from "@/lib/aws/demo-provider";
 import { decryptSecret } from "@/lib/crypto";
 import type {
   AiProviderId,
   AiProviderPreference,
   ComputedRuleFinding,
+  CostRecommendationPlan,
   PricedResourceSnapshot,
-  SurgicalPlan,
 } from "@/lib/domain/types";
 
 export interface ResolvedAiCredentials {
@@ -46,7 +46,7 @@ export function computeProjectSnapshotHash(
     .digest("hex");
 }
 
-export function buildSurgicalPrompt(
+export function buildRecommendationPrompt(
   projectLabel: string,
   resources: PricedResourceSnapshot[],
   findings: ComputedRuleFinding[],
@@ -67,7 +67,7 @@ export function buildSurgicalPrompt(
     title: f.title,
   }));
 
-  return `Analyze the live AWS resources for project "${projectLabel}" and return a surgical cost-cutting plan that keeps the application LIVE (do NOT suggest terraform destroy).
+  return `Analyze the live AWS resources for project "${projectLabel}" and return non-destructive cost-saving recommendations that keep the application online (do NOT suggest terraform destroy).
 
 Resources:
 ${JSON.stringify(compactResources, null, 2)}
@@ -150,19 +150,19 @@ export type ProviderInvoker = (
   provider: AiProviderId,
   prompt: string,
   creds: ResolvedAiCredentials,
-) => Promise<{ plan: SurgicalPlan; modelId: string }>;
+) => Promise<{ plan: CostRecommendationPlan; modelId: string }>;
 
 const defaultInvoker: ProviderInvoker = async (provider, prompt, creds) => {
   if (provider === "gemini") {
     if (!creds.gemini) throw new Error("Gemini API key is not configured.");
-    return generateGeminiSurgicalPlan({
+    return generateGeminiRecommendations({
       apiKey: creds.gemini.apiKey,
       modelId: creds.gemini.modelId,
       prompt,
     });
   }
   if (!creds.groq) throw new Error("Groq API key is not configured.");
-  return generateGroqSurgicalPlan({
+  return generateGroqRecommendations({
     apiKey: creds.groq.apiKey,
     modelId: creds.groq.modelId,
     prompt,
@@ -177,7 +177,7 @@ export async function runWithProviderFallback(params: {
 }): Promise<{
   providerUsed: AiProviderId;
   modelId: string;
-  plan: SurgicalPlan;
+  plan: CostRecommendationPlan;
   usedFallback: boolean;
 }> {
   const invoker = params.invoker ?? defaultInvoker;
@@ -228,11 +228,11 @@ export interface AdvisorResponse {
   modelId: string;
   usedFallback: boolean;
   snapshotHash: string;
-  plan: SurgicalPlan;
+  plan: CostRecommendationPlan;
   createdAt: string;
 }
 
-export async function generateOrFetchSurgicalPlan(params: {
+export async function generateOrFetchRecommendations(params: {
   connectionId: string;
   connectionMode: "demo" | "iam_keys" | "env_default";
   projectSlug: string;
@@ -249,7 +249,6 @@ export async function generateOrFetchSurgicalPlan(params: {
 
   const hasLiveAiKey = Boolean(creds.gemini || creds.groq);
 
-  // If no AI key is configured yet and user is in Demo Mode, return instant realistic demo plan.
   if (!hasLiveAiKey && params.connectionMode === "demo") {
     const demoProvider: AiProviderId = preferred === "groq" ? "groq" : "gemini";
     return {
@@ -258,7 +257,7 @@ export async function generateOrFetchSurgicalPlan(params: {
       modelId: demoProvider === "groq" ? DEFAULT_GROQ_MODEL : DEFAULT_GEMINI_MODEL,
       usedFallback: false,
       snapshotHash,
-      plan: getDemoSurgicalPlan(params.projectSlug),
+      plan: getDemoRecommendations(params.projectSlug),
       createdAt: new Date().toISOString(),
     };
   }
@@ -288,13 +287,13 @@ export async function generateOrFetchSurgicalPlan(params: {
         modelId: cached.modelId,
         usedFallback: false,
         snapshotHash: cached.snapshotHash,
-        plan: cached.planJson as SurgicalPlan,
+        plan: cached.planJson as CostRecommendationPlan,
         createdAt: cached.createdAt.toISOString(),
       };
     }
   }
 
-  const prompt = buildSurgicalPrompt(
+  const prompt = buildRecommendationPrompt(
     params.projectLabel,
     params.resources,
     params.findings,

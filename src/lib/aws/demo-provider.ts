@@ -1,4 +1,7 @@
-import type { DiscoveredAwsResource, SurgicalPlan } from "@/lib/domain/types";
+import type {
+  CostRecommendationPlan,
+  DiscoveredAwsResource,
+} from "@/lib/domain/types";
 
 export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResource[] {
   const fiveDaysAgoIso = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
@@ -129,7 +132,7 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
       },
     },
 
-    // --- Untagged / Orphaned Zombies (Leftovers from crashed Terraform deploys) ---
+    // --- Untagged / Idle Resources (Leftovers from incomplete Terraform deploys) ---
     {
       arn: "arn:aws:ec2:us-east-1:123456789012:eip-allocation/eipalloc-0zmb0001",
       resourceId: "eipalloc-0zmb0001",
@@ -183,7 +186,9 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
   ];
 }
 
-export function getDemoSurgicalPlan(projectSlug: string): SurgicalPlan {
+export function getDemoRecommendations(
+  projectSlug: string,
+): CostRecommendationPlan {
   if (projectSlug === "cloudpress") {
     return {
       summary:
@@ -273,7 +278,7 @@ export function getDemoSurgicalPlan(projectSlug: string): SurgicalPlan {
 
   return {
     summary:
-      "Release unattached zombie networking/storage resources left behind by failed deployments and apply Terraform default_tags so future resources never go untagged.",
+      "Release unattached networking and storage resources left behind by incomplete deployments, and add Terraform default_tags so future resources are always tagged.",
     keepsAppLive: true,
     totalEstimatedMonthlySavingsCents: 2_460,
     actions: [

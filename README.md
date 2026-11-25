@@ -36,7 +36,7 @@ Open `http://localhost:3000`.
 ```bash
 # Local Docker Postgres
 docker compose up -d
-# Set DATABASE_URL="postgresql://tagwatch:tagwatch@localhost:5432/tagwatch" in .env
+# Set DATABASE_URL="postgresql://cpw:cpw@localhost:5432/cloudprojectwatch" in .env
 
 # Or Neon / Supabase
 # Set DATABASE_URL="postgresql://user:pass@host/db?sslmode=require" in .env

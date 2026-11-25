@@ -4,9 +4,12 @@ import {
   runWithProviderFallback,
   type ResolvedAiCredentials,
 } from "@/lib/ai/advisor";
-import type { PricedResourceSnapshot, SurgicalPlan } from "@/lib/domain/types";
+import type {
+  CostRecommendationPlan,
+  PricedResourceSnapshot,
+} from "@/lib/domain/types";
 
-const MOCK_PLAN: SurgicalPlan = {
+const MOCK_PLAN: CostRecommendationPlan = {
   summary: "Downgrade RDS IOPS to baseline gp3 without taking the app offline.",
   keepsAppLive: true,
   totalEstimatedMonthlySavingsCents: 60000,

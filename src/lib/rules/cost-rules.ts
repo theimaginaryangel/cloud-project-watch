@@ -11,7 +11,7 @@ import {
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function evaluateZombieRules(
+export function evaluateCostRules(
   resources: PricedResourceSnapshot[],
   now: Date = new Date(),
 ): ComputedRuleFinding[] {

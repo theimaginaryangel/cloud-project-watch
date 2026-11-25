@@ -5,6 +5,8 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgresql://tagwatch:tagwatch@localhost:5432/tagwatch",
+    url:
+      process.env.DATABASE_URL ??
+      "postgresql://cpw:cpw@localhost:5432/cloudprojectwatch",
   },
 });

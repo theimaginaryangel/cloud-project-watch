@@ -92,7 +92,7 @@ function matchPrefix(
 
 /**
  * Retroactive 4-layer grouping cascade:
- * 1. Explicit ARN/ID override saved in TagWatch
+ * 1. Explicit ARN/ID override saved in CloudProjectWatch
  * 2. Existing AWS tags (Project, app, aws:cloudformation:stack-name, custom keys)
  * 3. Configured name prefixes (e.g., cloudpress-*)
  * 4. Parent resource inheritance (e.g., EBS volume or EIP attached to a grouped EC2 instance)

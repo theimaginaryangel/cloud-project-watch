@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         accountId: "123456789012",
-        arn: "arn:aws:iam::123456789012:user/tagwatch-demo",
+        arn: "arn:aws:iam::123456789012:user/cloudprojectwatch-demo",
         message: "Demo Mode active — zero AWS credentials required.",
       });
     }

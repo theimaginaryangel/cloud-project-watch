@@ -23,7 +23,7 @@ import {
   type Severity,
 } from "@/lib/domain/types";
 import { groupAndPriceResources } from "@/lib/grouping/project-grouper";
-import { evaluateZombieRules } from "@/lib/rules/zombie-engine";
+import { evaluateCostRules } from "@/lib/rules/cost-rules";
 
 export interface StoredAwsCredsPayload {
   accessKeyId: string;
@@ -182,7 +182,7 @@ export async function triggerScan(params: {
     }
 
     const priced: PricedResourceSnapshot[] = groupAndPriceResources(discovered, ruleInputs);
-    const findings: ComputedRuleFinding[] = evaluateZombieRules(priced);
+    const findings: ComputedRuleFinding[] = evaluateCostRules(priced);
 
     const totalMonthlyCents = priced.reduce((sum, r) => sum + r.monthlyCents, 0);
     // Cap per-resource savings at the resource's cost unless it's a stopped-RDS future restart alert

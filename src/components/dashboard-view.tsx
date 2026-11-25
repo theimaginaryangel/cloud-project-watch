@@ -141,7 +141,7 @@ export function DashboardView() {
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <Link
-              href="/zombies"
+              href="/untagged"
               className="text-xs font-medium text-foreground hover:opacity-75 transition-opacity"
             >
               Review
@@ -321,7 +321,7 @@ export function DashboardView() {
               Worth checking
             </h2>
             <Link
-              href="/zombies"
+              href="/untagged"
               className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
             >
               <span>View all</span>

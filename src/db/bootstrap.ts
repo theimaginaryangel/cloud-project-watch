@@ -1,18 +1,22 @@
 export const BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS aws_connections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  singleton_key text NOT NULL DEFAULT 'primary',
   name text NOT NULL DEFAULT 'Primary AWS',
-  mode text NOT NULL DEFAULT 'demo',
+  mode text NOT NULL DEFAULT 'demo' CHECK (mode IN ('demo', 'iam_keys', 'env_default')),
   regions text[] NOT NULL DEFAULT ARRAY['us-east-1', 'us-east-2', 'us-west-2']::text[],
   encrypted_credentials text,
   cost_explorer_enabled boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE aws_connections ADD COLUMN IF NOT EXISTS singleton_key text NOT NULL DEFAULT 'primary';
+CREATE UNIQUE INDEX IF NOT EXISTS aws_connections_singleton_uidx
+  ON aws_connections (singleton_key);
 
 CREATE TABLE IF NOT EXISTS ai_provider_configs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider text NOT NULL,
+  provider text NOT NULL CHECK (provider IN ('gemini', 'groq')),
   encrypted_api_key text,
   model_id text NOT NULL,
   is_default boolean NOT NULL DEFAULT false,
@@ -25,7 +29,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ai_provider_configs_provider_uidx
 CREATE TABLE IF NOT EXISTS project_rules (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   connection_id uuid NOT NULL REFERENCES aws_connections(id) ON DELETE CASCADE,
-  rule_type text NOT NULL,
+  rule_type text NOT NULL CHECK (rule_type IN ('arn_override', 'tag_key', 'name_prefix')),
   pattern text NOT NULL,
   project_slug text NOT NULL,
   project_label text NOT NULL,
@@ -39,7 +43,7 @@ CREATE TABLE IF NOT EXISTS scan_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   connection_id uuid NOT NULL REFERENCES aws_connections(id) ON DELETE CASCADE,
   idempotency_key text NOT NULL,
-  status text NOT NULL DEFAULT 'running',
+  status text NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed')),
   regions_scanned text[] NOT NULL DEFAULT ARRAY[]::text[],
   resource_count integer NOT NULL DEFAULT 0 CHECK (resource_count >= 0),
   total_monthly_cents bigint NOT NULL DEFAULT 0 CHECK (total_monthly_cents >= 0),
@@ -60,19 +64,21 @@ CREATE TABLE IF NOT EXISTS aws_resources (
   connection_id uuid NOT NULL REFERENCES aws_connections(id) ON DELETE CASCADE,
   arn text NOT NULL,
   resource_id text NOT NULL,
-  service text NOT NULL,
+  service text NOT NULL CHECK (service IN ('ec2', 'ebs', 'eip', 'nat_gateway', 'rds', 'secrets_manager', 'elb')),
   region text NOT NULL,
   name text NOT NULL,
   state text NOT NULL,
   project_slug text NOT NULL,
   project_label text NOT NULL,
-  project_source text NOT NULL,
+  project_source text NOT NULL CHECK (project_source IN ('override', 'tag', 'prefix', 'parent', 'orphaned')),
   hourly_microcents bigint NOT NULL DEFAULT 0 CHECK (hourly_microcents >= 0),
   monthly_cents bigint NOT NULL DEFAULT 0 CHECK (monthly_cents >= 0),
   tags_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   scanned_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS aws_resources_scan_project_idx
+  ON aws_resources (scan_run_id, project_slug);
 
 CREATE TABLE IF NOT EXISTS rule_findings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -80,8 +86,17 @@ CREATE TABLE IF NOT EXISTS rule_findings (
   resource_id text NOT NULL,
   resource_arn text NOT NULL,
   project_slug text NOT NULL,
-  rule_code text NOT NULL,
-  severity text NOT NULL,
+  rule_code text NOT NULL CHECK (rule_code IN (
+    'UNATTACHED_EIP',
+    'ORPHANED_EBS',
+    'RDS_7DAY_AUTORESTART',
+    'SECRETS_TO_SSM',
+    'RDS_PROVISIONED_IOPS',
+    'RDS_MULTIAZ_NONPROD',
+    'IDLE_NAT_GATEWAY',
+    'UNTAGGED_RESOURCE'
+  )),
+  severity text NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
   title text NOT NULL,
   description text NOT NULL,
   estimated_monthly_savings_cents bigint NOT NULL DEFAULT 0 CHECK (estimated_monthly_savings_cents >= 0),
@@ -90,13 +105,15 @@ CREATE TABLE IF NOT EXISTS rule_findings (
   keeps_app_live boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS rule_findings_scan_project_idx
+  ON rule_findings (scan_run_id, project_slug);
 
 CREATE TABLE IF NOT EXISTS ai_recommendations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   connection_id uuid NOT NULL REFERENCES aws_connections(id) ON DELETE CASCADE,
   project_slug text NOT NULL,
   snapshot_hash text NOT NULL,
-  provider text NOT NULL,
+  provider text NOT NULL CHECK (provider IN ('gemini', 'groq')),
   model_id text NOT NULL,
   plan_json jsonb NOT NULL,
   estimated_monthly_savings_cents bigint NOT NULL DEFAULT 0 CHECK (estimated_monthly_savings_cents >= 0),
@@ -108,10 +125,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS ai_recs_conn_proj_hash_provider_uidx
 CREATE TABLE IF NOT EXISTS cost_explorer_syncs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   connection_id uuid NOT NULL REFERENCES aws_connections(id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'completed', 'failed')),
   period_start text NOT NULL,
   period_end text NOT NULL,
   actual_mtd_cents bigint NOT NULL DEFAULT 0 CHECK (actual_mtd_cents >= 0),
   by_service_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   synced_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE cost_explorer_syncs ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'completed';
+CREATE INDEX IF NOT EXISTS ce_syncs_conn_synced_idx
+  ON cost_explorer_syncs (connection_id, synced_at DESC);
 `;

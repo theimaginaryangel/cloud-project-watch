@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateOrFetchRecommendations } from "@/lib/ai/advisor";
 import type { ComputedRuleFinding, PricedResourceSnapshot } from "@/lib/domain/types";
-import { getDashboardData } from "@/lib/scans/orchestrator";
+import { getProjectDetailData } from "@/lib/scans/orchestrator";
+import {
+  blockIfPublicDemoLocked,
+  enforceApiGuard,
+  isStatelessDemoMode,
+  parseJsonBody,
+  safeDecodeUriSegment,
+  toErrorResponse,
+} from "@/lib/security/guards";
 
 const AdviseRequestSchema = z.object({
   provider: z.enum(["gemini", "groq", "auto"]).optional(),
@@ -13,74 +21,74 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ slug: string }> },
 ) {
+  const blocked = await enforceApiGuard(request, {
+    mutation: true,
+    rateLimit: { bucket: "advise", limit: 15, windowMs: 60_000 },
+  });
+  if (blocked) return blocked;
+
+  if (!isStatelessDemoMode()) {
+    const demoLocked = blockIfPublicDemoLocked();
+    if (demoLocked) return demoLocked;
+  }
+
   try {
     const { slug } = await context.params;
-    const decodedSlug = decodeURIComponent(slug);
+    const decodedSlug = safeDecodeUriSegment(slug);
 
-    const rawBody = await request.text();
-    const parsedBody = rawBody
-      ? AdviseRequestSchema.safeParse(JSON.parse(rawBody))
-      : { success: true as const, data: {} };
+    const parsedBody = await parseJsonBody(request, AdviseRequestSchema, {
+      allowEmpty: true,
+      invalidMessage: "Invalid AI advisor request.",
+    });
 
-    if (!parsedBody.success) {
-      return NextResponse.json({ error: "Invalid AI advisor request." }, { status: 400 });
-    }
-
-    const data = await getDashboardData(true);
-    const project = data.projects.find((p) => p.slug === decodedSlug);
-    if (!project) {
+    const detail = await getProjectDetailData(decodedSlug, true);
+    if (!detail) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
-    const projectResources: PricedResourceSnapshot[] = data.resources
-      .filter((r) => r.projectSlug === decodedSlug)
-      .map((r) => ({
-        arn: r.arn,
-        resourceId: r.resourceId,
-        service: r.service,
-        region: r.region,
-        name: r.name,
-        state: r.state,
-        tags: r.tags,
-        metadata: r.metadata,
-        projectSlug: r.projectSlug,
-        projectLabel: r.projectLabel,
-        projectSource: r.projectSource,
-        hourlyMicrocents: r.hourlyMicrocents,
-        monthlyCents: r.monthlyCents,
-      }));
+    const projectResources: PricedResourceSnapshot[] = detail.resources.map((r) => ({
+      arn: r.arn,
+      resourceId: r.resourceId,
+      service: r.service,
+      region: r.region,
+      name: r.name,
+      state: r.state,
+      tags: r.tags,
+      metadata: r.metadata,
+      projectSlug: r.projectSlug,
+      projectLabel: r.projectLabel,
+      projectSource: r.projectSource,
+      hourlyMicrocents: r.hourlyMicrocents,
+      monthlyCents: r.monthlyCents,
+    }));
 
-    const projectFindings: ComputedRuleFinding[] = data.findings
-      .filter((f) => f.projectSlug === decodedSlug)
-      .map((f) => ({
-        resourceId: f.resourceId,
-        resourceArn: f.resourceArn,
-        projectSlug: f.projectSlug,
-        ruleCode: f.ruleCode,
-        severity: f.severity,
-        title: f.title,
-        description: f.description,
-        estimatedMonthlySavingsCents: f.estimatedMonthlySavingsCents,
-        cliCommand: f.cliCommand,
-        terraformHint: f.terraformHint,
-        keepsAppLive: f.keepsAppLive,
-      }));
+    const projectFindings: ComputedRuleFinding[] = detail.findings.map((f) => ({
+      resourceId: f.resourceId,
+      resourceArn: f.resourceArn,
+      projectSlug: f.projectSlug,
+      ruleCode: f.ruleCode,
+      severity: f.severity,
+      title: f.title,
+      description: f.description,
+      estimatedMonthlySavingsCents: f.estimatedMonthlySavingsCents,
+      cliCommand: f.cliCommand,
+      terraformHint: f.terraformHint,
+      keepsAppLive: f.keepsAppLive,
+    }));
 
     const result = await generateOrFetchRecommendations({
-      connectionId: data.connection.id,
-      connectionMode: data.connection.mode,
-      projectSlug: project.slug,
-      projectLabel: project.label,
+      connectionId: detail.connection.id,
+      connectionMode: detail.connection.mode,
+      projectSlug: detail.project.slug,
+      projectLabel: detail.project.label,
       resources: projectResources,
       findings: projectFindings,
-      preferredProvider: parsedBody.data.provider,
-      forceRefresh: parsedBody.data.forceRefresh,
+      preferredProvider: parsedBody.provider,
+      forceRefresh: parsedBody.forceRefresh,
     });
 
     return NextResponse.json(result);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to generate cost recommendations.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to generate cost recommendations.");
   }
 }

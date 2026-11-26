@@ -22,6 +22,15 @@ import {
 } from "@/lib/domain/types";
 import type { DashboardPayload } from "@/lib/scans/orchestrator";
 
+async function fetchDashboardPayload(): Promise<DashboardPayload> {
+  const res = await fetch("/api/dashboard", { cache: "no-store" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Could not load data.");
+  }
+  return (await res.json()) as DashboardPayload;
+}
+
 export function DashboardView() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,16 +39,13 @@ export function DashboardView() {
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const scanLockRef = useRef(false);
+  const pendingScanKeyRef = useRef<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     try {
+      const payload = await fetchDashboardPayload();
+      setData(payload);
       setError(null);
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Could not load data.");
-      }
-      setData((await res.json()) as DashboardPayload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load data.");
     } finally {
@@ -48,15 +54,34 @@ export function DashboardView() {
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    let cancelled = false;
+    fetchDashboardPayload()
+      .then((payload) => {
+        if (cancelled) return;
+        setData(payload);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Could not load data.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleScanNow() {
     if (scanLockRef.current) return;
     scanLockRef.current = true;
     setScanning(true);
 
-    const idempotencyKey = `scan-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const idempotencyKey =
+      pendingScanKeyRef.current ??
+      `scan-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    pendingScanKeyRef.current = idempotencyKey;
 
     try {
       const res = await fetch("/api/scans", {
@@ -66,8 +91,14 @@ export function DashboardView() {
       });
 
       const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(body.error ?? "Scan failed.");
+      if (!res.ok) {
+        if (res.status < 500) {
+          pendingScanKeyRef.current = null;
+        }
+        throw new Error(body.error ?? "Scan failed.");
+      }
 
+      pendingScanKeyRef.current = null;
       toast("AWS resources refreshed");
       await loadDashboard();
     } catch (err) {

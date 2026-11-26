@@ -9,6 +9,7 @@ import {
   type ProjectSource,
 } from "@/lib/domain/types";
 import { estimateResourceCost } from "@/lib/pricing/aws-rates";
+import { escapeHclString, shellQuote, stripControlChars } from "@/lib/security/shell";
 
 export const DEFAULT_TAG_KEYS = [
   "Project",
@@ -32,7 +33,7 @@ function matchOverride(
   for (const rule of overrideRules) {
     if (rule.pattern === resource.arn || rule.pattern === resource.resourceId) {
       return {
-        projectSlug: slugifyProject(rule.projectSlug),
+        projectSlug: slugifyProject(rule.projectSlug || rule.projectLabel),
         projectLabel: rule.projectLabel,
         projectSource: "override",
       };
@@ -48,8 +49,10 @@ function matchTag(
   const orderedKeys = [...customTagKeys, ...DEFAULT_TAG_KEYS];
   const lowerTags = new Map<string, string>();
   for (const [key, value] of Object.entries(resource.tags)) {
-    if (value.trim().length > 0) {
-      lowerTags.set(key.toLowerCase(), value.trim());
+    const trimmed = value.trim();
+    const lowerKey = key.toLowerCase();
+    if (trimmed.length > 0 && !lowerTags.has(lowerKey)) {
+      lowerTags.set(lowerKey, trimmed);
     }
   }
 
@@ -80,7 +83,7 @@ function matchPrefix(
     if (!cleaned) continue;
     if (nameLower.startsWith(cleaned) || idLower.startsWith(cleaned)) {
       return {
-        projectSlug: slugifyProject(rule.projectSlug),
+        projectSlug: slugifyProject(rule.projectSlug || rule.projectLabel),
         projectLabel: rule.projectLabel,
         projectSource: "prefix",
       };
@@ -96,7 +99,7 @@ function matchPrefix(
  * 2. Existing AWS tags (Project, app, aws:cloudformation:stack-name, custom keys)
  * 3. Configured name prefixes (e.g., cloudpress-*)
  * 4. Parent resource inheritance (e.g., EBS volume or EIP attached to a grouped EC2 instance)
- * 5. Fallback -> __orphaned__ ("Untagged / Orphaned")
+ * 5. Fallback -> __orphaned__ ("Untagged")
  */
 export function groupAndPriceResources(
   resources: DiscoveredAwsResource[],
@@ -155,14 +158,18 @@ export function groupAndPriceResources(
   });
 }
 
-export function buildTagResourcesCli(arns: string[], projectName: string, region = "us-east-1"): string {
-  const safeArns = arns.map((arn) => `"${arn}"`).join(" ");
-  const safeProject = projectName.replace(/"/g, "");
-  return `aws resourcegroupstaggingapi tag-resources --region ${region} --resource-arn-list ${safeArns} --tags Project="${safeProject}"`;
+export function buildTagResourcesCli(
+  arns: string[],
+  projectName: string,
+  region = "us-east-1",
+): string {
+  const safeArns = arns.map((arn) => shellQuote(arn)).join(" ");
+  const cleanProject = stripControlChars(projectName).replace(/,/g, "") || "my-project";
+  return `aws resourcegroupstaggingapi tag-resources --region ${shellQuote(region)} --resource-arn-list ${safeArns} --tags ${shellQuote(`Project=${cleanProject}`)}`;
 }
 
 export function buildTerraformDefaultTags(projectName: string): string {
-  const safeProject = projectName.replace(/"/g, "");
+  const safeProject = escapeHclString(projectName || "my-project");
   return `provider "aws" {
   region = var.aws_region
 

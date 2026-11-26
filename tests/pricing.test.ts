@@ -5,16 +5,25 @@ import {
   estimateRdsMultiAzSavingsCents,
   estimateResourceCost,
   monthlyCentsFromHourlyMicrocents,
+  parseUsdDecimalToCents,
 } from "@/lib/pricing/aws-rates";
 
 describe("AWS integer-microcent pricing engine", () => {
   it("converts exact hourly microcents to monthly cents without float drift", () => {
-    // $0.005/hr * 730h = $3.65 (365 cents)
     expect(monthlyCentsFromHourlyMicrocents(500_000n)).toBe(365);
-    // $0.045/hr * 730h = $32.85 (3285 cents)
     expect(monthlyCentsFromHourlyMicrocents(4_500_000n)).toBe(3285);
     expect(monthlyCentsFromHourlyMicrocents(0n)).toBe(0);
     expect(monthlyCentsFromHourlyMicrocents(-100n)).toBe(0);
+  });
+
+  it("parses Cost Explorer USD decimal strings to exact integer cents without float drift", () => {
+    expect(parseUsdDecimalToCents("0")).toBe(0);
+    expect(parseUsdDecimalToCents("19.99")).toBe(1999);
+    expect(parseUsdDecimalToCents("412.5")).toBe(41250);
+    expect(parseUsdDecimalToCents("0.005")).toBe(1);
+    expect(parseUsdDecimalToCents("0.004")).toBe(0);
+    expect(parseUsdDecimalToCents("-12.34")).toBe(0);
+    expect(parseUsdDecimalToCents("not-a-number")).toBe(0);
   });
 
   it("prices running vs stopped EC2 accurately", () => {
@@ -53,12 +62,8 @@ describe("AWS integer-microcent pricing engine", () => {
     };
 
     const cost = estimateResourceCost(rds);
-    // Compute: $0.068 * 2 * 730 = $99.28 (9928c)
-    // Storage: 100GB * $0.13 * 2 = $26.00 (2600c)
-    // IOPS: 3000 * $0.10 * 2 = $600.00 (60000c)
     expect(cost.monthlyCents).toBe(72528);
     expect(estimateRdsIopsDowngradeSavingsCents(rds)).toBe(60000);
-    // Multi-AZ savings excludes already-counted IOPS savings: (72528 - 60000) / 2 = 6264
     expect(estimateRdsMultiAzSavingsCents(rds)).toBe(6264);
   });
 

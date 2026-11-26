@@ -27,6 +27,8 @@ CloudProjectWatch ships with an embedded local PostgreSQL database (`PGlite`) an
 git clone https://github.com/theimaginaryangel/cloud-project-watch.git
 cd cloud-project-watch
 cp .env.example .env
+# Generate a unique 32-byte encryption key and paste it into APP_ENCRYPTION_KEY in .env:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 npm install
 npm run dev
 ```
@@ -35,17 +37,17 @@ Open `http://localhost:3000`.
 
 ### Deployment & Key Security
 
-Each self-hosted user owns their own PostgreSQL database and `APP_ENCRYPTION_KEY`. Keys saved in Settings are encrypted with AES-256-GCM and are never returned to the browser.
+Each self-hosted user owns their own PostgreSQL database and `APP_ENCRYPTION_KEY`. Keys saved in Settings are encrypted with AES-256-GCM and are never returned to the browser. Known example or weak keys are rejected at runtime.
 
 - **Public portfolio demo (zero database needed):** Deploy directly on Vercel with **no `DATABASE_URL`** (or set `PUBLIC_DEMO_LOCK="true"`). It runs completely stateless in memory with realistic demo data, and blocks saving keys (`403`).
-- **Private personal tracker (real AWS account):** Attach a PostgreSQL `DATABASE_URL` (Neon/Supabase) + `APP_ENCRYPTION_KEY` + `OWNER_PASSWORD` (HTTP Basic Auth). As soon as a Postgres `DATABASE_URL` is attached, demo mode automatically turns off so the dashboard reflects your real AWS account.
+- **Private personal tracker (real AWS account):** Attach a PostgreSQL `DATABASE_URL` (Neon/Supabase) + `APP_ENCRYPTION_KEY` + `OWNER_PASSWORD` (HTTP Basic Auth — **required in production** whenever `PUBLIC_DEMO_LOCK="false"`). Ambient host/CLI credentials (`env_default`) are disabled unless `ALLOW_AMBIENT_AWS_CREDENTIALS="true"` is explicitly set.
 
 ### Using PostgreSQL (Docker, Neon, or Supabase)
 
 ```bash
-# Local Docker Postgres
+# Local Docker Postgres (bound strictly to 127.0.0.1:5432)
 docker compose up -d
-# Set DATABASE_URL="postgresql://cpw:cpw@localhost:5432/cloudprojectwatch" in .env
+# Set DATABASE_URL="postgresql://cpw:cpw@127.0.0.1:5432/cloudprojectwatch" in .env
 
 # Or Neon / Supabase
 # Set DATABASE_URL="postgresql://user:pass@host/db?sslmode=require" in .env

@@ -3,24 +3,29 @@ import { z } from "zod";
 import { aiProviderConfigs, ensureDbReady } from "@/db";
 import { DEFAULT_GEMINI_MODEL } from "@/lib/ai/providers/gemini";
 import { DEFAULT_GROQ_MODEL } from "@/lib/ai/providers/groq";
-import { decryptSecret, encryptSecret, maskSecret } from "@/lib/crypto";
+import { encryptSecret, maskSecret, tryDecryptSecret } from "@/lib/crypto";
 import {
-  blockIfPublicDemoLocked,
+  enforceApiGuard,
   isStatelessDemoMode,
+  parseJsonBody,
+  toErrorResponse,
 } from "@/lib/security/guards";
 
 const SaveAiSettingsSchema = z.object({
-  geminiApiKey: z.string().trim().optional(),
+  geminiApiKey: z.string().trim().max(512).optional(),
   geminiModel: z.string().trim().min(2).max(100).optional(),
   clearGeminiKey: z.boolean().optional(),
-  groqApiKey: z.string().trim().optional(),
+  groqApiKey: z.string().trim().max(512).optional(),
   groqModel: z.string().trim().min(2).max(100).optional(),
   clearGroqKey: z.boolean().optional(),
   defaultProvider: z.enum(["gemini", "groq", "auto"]),
   fallbackEnabled: z.boolean(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const blocked = await enforceApiGuard(request);
+  if (blocked) return blocked;
+
   if (isStatelessDemoMode()) {
     return NextResponse.json({
       gemini: {
@@ -46,12 +51,11 @@ export async function GET() {
     const geminiRow = rows.find((r) => r.provider === "gemini");
     const groqRow = rows.find((r) => r.provider === "groq");
 
-    const geminiDecrypted = geminiRow?.encryptedApiKey
-      ? decryptSecret(geminiRow.encryptedApiKey)
-      : process.env.GEMINI_API_KEY;
-    const groqDecrypted = groqRow?.encryptedApiKey
-      ? decryptSecret(groqRow.encryptedApiKey)
-      : process.env.GROQ_API_KEY;
+    const geminiSavedPlain = tryDecryptSecret(geminiRow?.encryptedApiKey);
+    const groqSavedPlain = tryDecryptSecret(groqRow?.encryptedApiKey);
+
+    const geminiEffective = geminiSavedPlain ?? process.env.GEMINI_API_KEY?.trim();
+    const groqEffective = groqSavedPlain ?? process.env.GROQ_API_KEY?.trim();
 
     let defaultProvider: "gemini" | "groq" | "auto" = "auto";
     if (geminiRow?.isDefault) defaultProvider = "gemini";
@@ -59,19 +63,19 @@ export async function GET() {
 
     return NextResponse.json({
       gemini: {
-        ...maskSecret(geminiDecrypted),
-        source: geminiRow?.encryptedApiKey
+        ...maskSecret(geminiEffective),
+        source: geminiSavedPlain
           ? "saved"
-          : process.env.GEMINI_API_KEY
+          : process.env.GEMINI_API_KEY?.trim()
             ? "env"
             : "none",
         modelId: geminiRow?.modelId ?? process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL,
       },
       groq: {
-        ...maskSecret(groqDecrypted),
-        source: groqRow?.encryptedApiKey
+        ...maskSecret(groqEffective),
+        source: groqSavedPlain
           ? "saved"
-          : process.env.GROQ_API_KEY
+          : process.env.GROQ_API_KEY?.trim()
             ? "env"
             : "none",
         modelId: groqRow?.modelId ?? process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL,
@@ -80,37 +84,38 @@ export async function GET() {
       fallbackEnabled: geminiRow?.fallbackEnabled ?? groqRow?.fallbackEnabled ?? true,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load AI settings.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to load AI settings.");
   }
 }
 
 export async function POST(request: Request) {
-  const locked = blockIfPublicDemoLocked();
-  if (locked) return locked;
+  const blocked = await enforceApiGuard(request, {
+    mutation: true,
+    blockDemo: true,
+    rateLimit: { bucket: "settings_ai", limit: 20, windowMs: 60_000 },
+  });
+  if (blocked) return blocked;
 
   try {
-    const body: unknown = await request.json();
-    const parsed = SaveAiSettingsSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid AI settings payload." }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, SaveAiSettingsSchema, {
+      invalidMessage: "Invalid AI settings payload.",
+    });
 
     const db = await ensureDbReady();
     const existing = await db.select().from(aiProviderConfigs);
     const existingGemini = existing.find((r) => r.provider === "gemini");
     const existingGroq = existing.find((r) => r.provider === "groq");
 
-    const nextGeminiEncrypted = parsed.data.clearGeminiKey
+    const nextGeminiEncrypted = parsed.clearGeminiKey
       ? null
-      : parsed.data.geminiApiKey
-        ? encryptSecret(parsed.data.geminiApiKey)
+      : parsed.geminiApiKey
+        ? encryptSecret(parsed.geminiApiKey)
         : (existingGemini?.encryptedApiKey ?? null);
 
-    const nextGroqEncrypted = parsed.data.clearGroqKey
+    const nextGroqEncrypted = parsed.clearGroqKey
       ? null
-      : parsed.data.groqApiKey
-        ? encryptSecret(parsed.data.groqApiKey)
+      : parsed.groqApiKey
+        ? encryptSecret(parsed.groqApiKey)
         : (existingGroq?.encryptedApiKey ?? null);
 
     await db.transaction(async (tx) => {
@@ -119,18 +124,18 @@ export async function POST(request: Request) {
         .values({
           provider: "gemini",
           encryptedApiKey: nextGeminiEncrypted,
-          modelId: parsed.data.geminiModel || DEFAULT_GEMINI_MODEL,
-          isDefault: parsed.data.defaultProvider === "gemini",
-          fallbackEnabled: parsed.data.fallbackEnabled,
+          modelId: parsed.geminiModel || DEFAULT_GEMINI_MODEL,
+          isDefault: parsed.defaultProvider === "gemini",
+          fallbackEnabled: parsed.fallbackEnabled,
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: aiProviderConfigs.provider,
           set: {
             encryptedApiKey: nextGeminiEncrypted,
-            modelId: parsed.data.geminiModel || DEFAULT_GEMINI_MODEL,
-            isDefault: parsed.data.defaultProvider === "gemini",
-            fallbackEnabled: parsed.data.fallbackEnabled,
+            modelId: parsed.geminiModel || DEFAULT_GEMINI_MODEL,
+            isDefault: parsed.defaultProvider === "gemini",
+            fallbackEnabled: parsed.fallbackEnabled,
             updatedAt: new Date(),
           },
         });
@@ -140,18 +145,18 @@ export async function POST(request: Request) {
         .values({
           provider: "groq",
           encryptedApiKey: nextGroqEncrypted,
-          modelId: parsed.data.groqModel || DEFAULT_GROQ_MODEL,
-          isDefault: parsed.data.defaultProvider === "groq",
-          fallbackEnabled: parsed.data.fallbackEnabled,
+          modelId: parsed.groqModel || DEFAULT_GROQ_MODEL,
+          isDefault: parsed.defaultProvider === "groq",
+          fallbackEnabled: parsed.fallbackEnabled,
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: aiProviderConfigs.provider,
           set: {
             encryptedApiKey: nextGroqEncrypted,
-            modelId: parsed.data.groqModel || DEFAULT_GROQ_MODEL,
-            isDefault: parsed.data.defaultProvider === "groq",
-            fallbackEnabled: parsed.data.fallbackEnabled,
+            modelId: parsed.groqModel || DEFAULT_GROQ_MODEL,
+            isDefault: parsed.defaultProvider === "groq",
+            fallbackEnabled: parsed.fallbackEnabled,
             updatedAt: new Date(),
           },
         });
@@ -159,7 +164,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to save AI settings.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to save AI settings.");
   }
 }

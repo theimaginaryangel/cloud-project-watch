@@ -34,6 +34,12 @@ import {
 import { buildTagResourcesCli } from "@/lib/grouping/project-grouper";
 import type { DashboardPayload } from "@/lib/scans/orchestrator";
 
+async function fetchUntaggedDashboard(): Promise<DashboardPayload> {
+  const res = await fetch("/api/dashboard", { cache: "no-store" });
+  if (!res.ok) throw new Error("Could not load resources.");
+  return (await res.json()) as DashboardPayload;
+}
+
 export function UntaggedView() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,10 +55,9 @@ export function UntaggedView() {
 
   const loadData = useCallback(async () => {
     try {
+      const payload = await fetchUntaggedDashboard();
+      setData(payload);
       setError(null);
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
-      if (!res.ok) throw new Error("Could not load resources.");
-      setData((await res.json()) as DashboardPayload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load resources.");
     } finally {
@@ -61,8 +66,26 @@ export function UntaggedView() {
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    let cancelled = false;
+    fetchUntaggedDashboard()
+      .then((payload) => {
+        if (!cancelled) {
+          setData(payload);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load resources.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleAssignSubmit(e: React.FormEvent) {
     e.preventDefault();

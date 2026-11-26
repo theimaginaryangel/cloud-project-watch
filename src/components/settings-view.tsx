@@ -1,12 +1,12 @@
 "use client";
 
 import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -43,6 +43,7 @@ interface ConnectionSettingsState {
   costExplorerEnabled: boolean;
   credentials: { configured: boolean; last4: string | null };
   envAwsAvailable: boolean;
+  ambientAwsAllowed?: boolean;
   publicDemoLocked?: boolean;
 }
 
@@ -59,6 +60,34 @@ interface SavedRule {
   pattern: string;
   projectSlug: string;
   projectLabel: string;
+}
+
+async function fetchAllSettingsPayload(): Promise<{
+  connection: ConnectionSettingsState;
+  ai: AiSettingsState;
+  rules: SavedRule[];
+}> {
+  const [connRes, aiRes, rulesRes] = await Promise.all([
+    fetch("/api/settings/connection", { cache: "no-store" }),
+    fetch("/api/settings/ai", { cache: "no-store" }),
+    fetch("/api/rules", { cache: "no-store" }),
+  ]);
+
+  if (!connRes.ok || !aiRes.ok || !rulesRes.ok) {
+    const failed = !connRes.ok ? connRes : !aiRes.ok ? aiRes : rulesRes;
+    const body = (await failed.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Could not load settings.");
+  }
+
+  const connPayload = (await connRes.json()) as { connection: ConnectionSettingsState };
+  const aiPayload = (await aiRes.json()) as AiSettingsState;
+  const rulesPayload = (await rulesRes.json()) as { rules: SavedRule[] };
+
+  return {
+    connection: connPayload.connection,
+    ai: aiPayload,
+    rules: rulesPayload.rules,
+  };
 }
 
 export function SettingsView() {
@@ -88,43 +117,51 @@ export function SettingsView() {
   const [savingRule, setSavingRule] = useState(false);
   const [syncingCe, setSyncingCe] = useState(false);
 
+  const pendingScanKeyRef = useRef<string | null>(null);
+
+  const applySettingsPayload = useCallback(
+    (payload: Awaited<ReturnType<typeof fetchAllSettingsPayload>>) => {
+      setConn(payload.connection);
+      setAi(payload.ai);
+      setGeminiModel(payload.ai.gemini.modelId);
+      setGroqModel(payload.ai.groq.modelId);
+      setDefaultProvider(payload.ai.defaultProvider);
+      setFallbackEnabled(payload.ai.fallbackEnabled);
+      setRules(payload.rules);
+      setLoadError(null);
+    },
+    [],
+  );
+
   const loadAll = useCallback(async () => {
     try {
-      setLoadError(null);
-      const [connRes, aiRes, rulesRes] = await Promise.all([
-        fetch("/api/settings/connection", { cache: "no-store" }),
-        fetch("/api/settings/ai", { cache: "no-store" }),
-        fetch("/api/rules", { cache: "no-store" }),
-      ]);
-
-      if (!connRes.ok || !aiRes.ok || !rulesRes.ok) {
-        const failed = !connRes.ok ? connRes : !aiRes.ok ? aiRes : rulesRes;
-        const body = (await failed.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Could not load settings.");
-      }
-
-      const connPayload = (await connRes.json()) as { connection: ConnectionSettingsState };
-      setConn(connPayload.connection);
-
-      const aiPayload = (await aiRes.json()) as AiSettingsState;
-      setAi(aiPayload);
-      setGeminiModel(aiPayload.gemini.modelId);
-      setGroqModel(aiPayload.groq.modelId);
-      setDefaultProvider(aiPayload.defaultProvider);
-      setFallbackEnabled(aiPayload.fallbackEnabled);
-
-      const rulesPayload = (await rulesRes.json()) as { rules: SavedRule[] };
-      setRules(rulesPayload.rules);
+      const payload = await fetchAllSettingsPayload();
+      applySettingsPayload(payload);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Could not load settings.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applySettingsPayload]);
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    let cancelled = false;
+    fetchAllSettingsPayload()
+      .then((payload) => {
+        if (!cancelled) applySettingsPayload(payload);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Could not load settings.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applySettingsPayload]);
 
   function toggleRegion(region: string) {
     if (!conn) return;
@@ -164,18 +201,20 @@ export function SettingsView() {
     }
   }
 
-  async function handleSaveAws(triggerRescan: boolean) {
+  async function handleSaveAws(triggerRescan: boolean, clearCredentials = false) {
     if (!conn || savingAws) return;
     setSavingAws(true);
     try {
+      const nextMode = clearCredentials && conn.mode === "iam_keys" ? "demo" : conn.mode;
       const res = await fetch("/api/settings/connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: conn.name,
-          mode: conn.mode,
+          mode: nextMode,
           regions: conn.regions,
           costExplorerEnabled: conn.costExplorerEnabled,
+          ...(clearCredentials ? { clearCredentials: true } : {}),
           ...(accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : {}),
         }),
       });
@@ -186,21 +225,26 @@ export function SettingsView() {
       setSecretAccessKey("");
 
       if (triggerRescan) {
+        const scanKey =
+          pendingScanKeyRef.current ??
+          `settings-scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        pendingScanKeyRef.current = scanKey;
+
         const scanRes = await fetch("/api/scans", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            idempotencyKey: `settings-scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          }),
+          body: JSON.stringify({ idempotencyKey: scanKey }),
         });
         if (!scanRes.ok) {
+          if (scanRes.status < 500) pendingScanKeyRef.current = null;
           const scanErr = (await scanRes.json().catch(() => ({}))) as { error?: string };
           toast.error(`Saved, but scan failed: ${scanErr.error ?? "unknown error"}`);
         } else {
+          pendingScanKeyRef.current = null;
           toast("Saved and scanned AWS");
         }
       } else {
-        toast("AWS settings saved");
+        toast(clearCredentials ? "Saved AWS keys cleared" : "AWS settings saved");
       }
 
       await loadAll();
@@ -211,7 +255,7 @@ export function SettingsView() {
     }
   }
 
-  async function handleSaveAi() {
+  async function handleSaveAi(options?: { clearGemini?: boolean; clearGroq?: boolean }) {
     if (savingAi) return;
     setSavingAi(true);
     try {
@@ -220,8 +264,10 @@ export function SettingsView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...(geminiKeyInput.trim() ? { geminiApiKey: geminiKeyInput.trim() } : {}),
+          ...(options?.clearGemini ? { clearGeminiKey: true } : {}),
           geminiModel,
           ...(groqKeyInput.trim() ? { groqApiKey: groqKeyInput.trim() } : {}),
+          ...(options?.clearGroq ? { clearGroqKey: true } : {}),
           groqModel,
           defaultProvider,
           fallbackEnabled,
@@ -233,7 +279,11 @@ export function SettingsView() {
       }
       setGeminiKeyInput("");
       setGroqKeyInput("");
-      toast("API keys encrypted and saved");
+      toast(
+        options?.clearGemini || options?.clearGroq
+          ? "Saved API key cleared"
+          : "API keys encrypted and saved",
+      );
       await loadAll();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save API keys.");
@@ -285,7 +335,8 @@ export function SettingsView() {
           rescanAfterSave: true,
         }),
       });
-      if (!res.ok) throw new Error("Could not save rule.");
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "Could not save rule.");
       setNewPattern("");
       setNewProjectLabel("");
       toast("Rule saved");
@@ -298,6 +349,7 @@ export function SettingsView() {
   }
 
   async function handleDeleteRule(id: string) {
+    if (conn?.publicDemoLocked) return;
     const res = await fetch("/api/rules", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -306,6 +358,9 @@ export function SettingsView() {
     if (res.ok) {
       toast("Rule removed");
       await loadAll();
+    } else {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(body.error ?? "Could not delete rule.");
     }
   }
 
@@ -313,7 +368,11 @@ export function SettingsView() {
     if (syncingCe) return;
     setSyncingCe(true);
     try {
-      const res = await fetch("/api/cost-explorer/sync", { method: "POST" });
+      const res = await fetch("/api/cost-explorer/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
       const body = (await res.json()) as {
         source?: "fresh" | "cached";
         actualMtdCents?: number;
@@ -359,6 +418,7 @@ export function SettingsView() {
 
   const iamPolicyJson = getReadOnlyPolicyJson(conn.costExplorerEnabled);
   const demoLocked = Boolean(conn.publicDemoLocked);
+  const ambientAllowed = Boolean(conn.ambientAwsAllowed);
 
   return (
     <div className="flex flex-col gap-8">
@@ -419,7 +479,9 @@ export function SettingsView() {
               >
                 <ToggleGroupItem value="demo">Demo data</ToggleGroupItem>
                 <ToggleGroupItem value="iam_keys">Read-only IAM keys</ToggleGroupItem>
-                <ToggleGroupItem value="env_default">Local AWS CLI</ToggleGroupItem>
+                <ToggleGroupItem value="env_default" disabled={!ambientAllowed && conn.mode !== "env_default"}>
+                  Local AWS CLI
+                </ToggleGroupItem>
               </ToggleGroup>
 
               {conn.mode === "iam_keys" ? (
@@ -442,7 +504,19 @@ export function SettingsView() {
 
                   <FieldGroup>
                     <Field>
-                      <FieldLabel htmlFor="aws-access-key">Access Key ID</FieldLabel>
+                      <div className="flex items-center justify-between gap-2">
+                        <FieldLabel htmlFor="aws-access-key">Access Key ID</FieldLabel>
+                        {conn.credentials.configured ? (
+                          <button
+                            type="button"
+                            disabled={savingAws || demoLocked}
+                            onClick={() => void handleSaveAws(false, true)}
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                          >
+                            Clear saved keys
+                          </button>
+                        ) : null}
+                      </div>
                       <Input
                         id="aws-access-key"
                         placeholder={
@@ -474,9 +548,19 @@ export function SettingsView() {
 
               {conn.mode === "env_default" ? (
                 <p className="text-xs text-muted-foreground">
-                  Reads credentials from environment variables or your local{" "}
-                  <code className="font-mono">~/.aws/credentials</code> profile. Env keys
-                  detected: {conn.envAwsAvailable ? "Yes" : "No (using local profile)"}.
+                  {ambientAllowed ? (
+                    <>
+                      Reads credentials from environment variables or your local{" "}
+                      <code className="font-mono">~/.aws/credentials</code> profile. Env keys
+                      detected: {conn.envAwsAvailable ? "Yes" : "No (using local profile)"}.
+                    </>
+                  ) : (
+                    <>
+                      Disabled by default for host safety. Set{" "}
+                      <code className="font-mono">ALLOW_AMBIENT_AWS_CREDENTIALS=true</code> in{" "}
+                      <code className="font-mono">.env</code> on trusted local machines.
+                    </>
+                  )}
                 </p>
               ) : null}
             </div>
@@ -589,11 +673,23 @@ export function SettingsView() {
             </div>
 
             <div className="p-6 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">Google Gemini</span>
-                <span className="text-xs text-muted-foreground">
-                  {ai.gemini.configured ? `Saved (••••${ai.gemini.last4})` : "Not set"}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {ai.gemini.configured ? `Saved (••••${ai.gemini.last4})` : "Not set"}
+                  </span>
+                  {ai.gemini.source === "saved" ? (
+                    <button
+                      type="button"
+                      disabled={savingAi || demoLocked}
+                      onClick={() => void handleSaveAi({ clearGemini: true })}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field>
@@ -621,7 +717,7 @@ export function SettingsView() {
                   size="sm"
                   variant="outline"
                   onClick={() => void handleVerifyAi("gemini")}
-                  disabled={testingProvider !== null}
+                  disabled={testingProvider !== null || demoLocked}
                   className="rounded-full"
                 >
                   {testingProvider === "gemini" ? <Spinner data-icon="inline-start" /> : null}
@@ -631,11 +727,23 @@ export function SettingsView() {
             </div>
 
             <div className="p-6 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">Groq</span>
-                <span className="text-xs text-muted-foreground">
-                  {ai.groq.configured ? `Saved (••••${ai.groq.last4})` : "Not set"}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {ai.groq.configured ? `Saved (••••${ai.groq.last4})` : "Not set"}
+                  </span>
+                  {ai.groq.source === "saved" ? (
+                    <button
+                      type="button"
+                      disabled={savingAi || demoLocked}
+                      onClick={() => void handleSaveAi({ clearGroq: true })}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field>
@@ -663,7 +771,7 @@ export function SettingsView() {
                   size="sm"
                   variant="outline"
                   onClick={() => void handleVerifyAi("groq")}
-                  disabled={testingProvider !== null}
+                  disabled={testingProvider !== null || demoLocked}
                   className="rounded-full"
                 >
                   {testingProvider === "groq" ? <Spinner data-icon="inline-start" /> : null}
@@ -775,6 +883,7 @@ export function SettingsView() {
                       type="button"
                       variant="ghost"
                       size="icon"
+                      disabled={demoLocked}
                       onClick={() => void handleDeleteRule(rule.id)}
                       aria-label="Delete rule"
                     >
@@ -797,6 +906,7 @@ export function SettingsView() {
               </div>
               <Switch
                 checked={conn.costExplorerEnabled}
+                disabled={demoLocked}
                 onCheckedChange={(checked) =>
                   setConn({ ...conn, costExplorerEnabled: checked })
                 }
@@ -809,7 +919,7 @@ export function SettingsView() {
                 size="sm"
                 variant="outline"
                 onClick={() => void handleSaveAws(false)}
-                disabled={savingAws}
+                disabled={savingAws || demoLocked}
                 className="rounded-full"
               >
                 Save preference
@@ -819,7 +929,12 @@ export function SettingsView() {
                 size="sm"
                 variant="ghost"
                 onClick={() => void handleSyncCostExplorer()}
-                disabled={!conn.costExplorerEnabled || conn.mode === "demo" || syncingCe}
+                disabled={
+                  !conn.costExplorerEnabled ||
+                  conn.mode === "demo" ||
+                  syncingCe ||
+                  demoLocked
+                }
                 className="rounded-full"
               >
                 {syncingCe ? (

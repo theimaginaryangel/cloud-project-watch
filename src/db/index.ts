@@ -42,7 +42,11 @@ export async function ensureDbReady(): Promise<CloudProjectWatchDb> {
       } else if (globalForDb.cpwSql) {
         await globalForDb.cpwSql.unsafe(BOOTSTRAP_SQL);
       }
-    })();
+    })().catch((err: unknown) => {
+      // Reset cached promise on failure so transient startup blips do not poison future requests.
+      globalForDb.cpwBootstrapped = undefined;
+      throw err;
+    });
   }
 
   await globalForDb.cpwBootstrapped;

@@ -1,8 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { enforceApiGuard } from "@/lib/security/guards";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const blocked = await enforceApiGuard(request);
+  if (blocked) return blocked;
+
   try {
     const filePath = path.join(process.cwd(), "infra", "readonly-iam.yaml");
     const content = await fs.readFile(filePath, "utf8");

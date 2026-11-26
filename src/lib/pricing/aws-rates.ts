@@ -35,7 +35,6 @@ const RDS_HOURLY_MICROCENTS: Record<string, bigint> = {
   "db.r6g.large": 24_000_000n,
 };
 
-// Monthly cents per GB for storage volumes
 const EBS_MONTHLY_CENTS_PER_GB: Record<string, bigint> = {
   gp3: 8n,
   gp2: 10n,
@@ -52,18 +51,16 @@ const RDS_STORAGE_MONTHLY_CENTS_PER_GB: Record<string, bigint> = {
   io2: 13n,
 };
 
-// Standard AWS baseline rates in exact integer units
-const EIP_HOURLY_MICROCENTS = 500_000n; // $0.005/hr (AWS charges for public IPv4 / unattached EIP)
-const NAT_GATEWAY_HOURLY_MICROCENTS = 4_500_000n; // $0.045/hr (~$32.85/mo before data processing)
-const ELB_HOURLY_MICROCENTS = 2_250_000n; // $0.0225/hr (~$16.43/mo baseline)
-const SECRET_MONTHLY_CENTS = 40n; // $0.40/secret/month
-const PROVISIONED_IOPS_MONTHLY_CENTS_PER_IOPS = 10n; // $0.10/IOPS/mo for io1/io2
-const GP3_EXTRA_IOPS_MONTHLY_CENTS_PER_IOPS = 1n; // ~$0.005-$0.01/extra IOPS above 3,000
+const EIP_HOURLY_MICROCENTS = 500_000n;
+const NAT_GATEWAY_HOURLY_MICROCENTS = 4_500_000n;
+const ELB_HOURLY_MICROCENTS = 2_250_000n;
+const SECRET_MONTHLY_CENTS = 40n;
+const PROVISIONED_IOPS_MONTHLY_CENTS_PER_IOPS = 10n;
+const GP3_EXTRA_IOPS_MONTHLY_CENTS_PER_IOPS = 1n;
 
 export function monthlyCentsFromHourlyMicrocents(hourlyMicrocents: bigint): number {
   if (hourlyMicrocents <= 0n) return 0;
   const totalMicrocents = hourlyMicrocents * HOURS_PER_MONTH;
-  // Round to nearest cent using integer half-up arithmetic
   const roundedCents = (totalMicrocents + MICROCENTS_PER_CENT / 2n) / MICROCENTS_PER_CENT;
   return Number(roundedCents);
 }
@@ -72,6 +69,27 @@ export function hourlyMicrocentsFromMonthlyCents(monthlyCents: bigint): number {
   if (monthlyCents <= 0n) return 0;
   const hourly = (monthlyCents * MICROCENTS_PER_CENT) / HOURS_PER_MONTH;
   return Number(hourly);
+}
+
+/**
+ * Parses a USD decimal string (such as Cost Explorer's `"412.50"` or `"0.009"`)
+ * into non-negative integer cents using exact integer math (no IEEE-754 floats).
+ */
+export function parseUsdDecimalToCents(amountStr: string): number {
+  const trimmed = amountStr.trim();
+  if (!trimmed || trimmed.startsWith("-")) return 0;
+
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(trimmed);
+  if (!match) return 0;
+
+  const wholeDollars = BigInt(match[1] ?? "0");
+  const fracRaw = (match[2] ?? "").padEnd(3, "0");
+  const centsTwoDigits = BigInt(fracRaw.slice(0, 2));
+  const thirdDigit = Number(fracRaw[2] ?? "0");
+
+  const roundedCents =
+    wholeDollars * 100n + centsTwoDigits + (thirdDigit >= 5 ? 1n : 0n);
+  return Number(roundedCents);
 }
 
 function readNumberMeta(meta: Record<string, unknown>, key: string, fallback = 0): number {
@@ -124,7 +142,7 @@ export function estimateResourceCost(resource: DiscoveredAwsResource): Estimated
 
       const iops = readNumberMeta(metadata, "iops", 3000);
       if (volumeType === "io1" || volumeType === "io2") {
-        monthlyCents += BigInt(iops) * 7n; // ~$0.065/IOPS/mo rounded up conservatively
+        monthlyCents += BigInt(iops) * 7n;
       } else if (volumeType === "gp3" && iops > 3000) {
         monthlyCents += BigInt(iops - 3000) * GP3_EXTRA_IOPS_MONTHLY_CENTS_PER_IOPS;
       }
@@ -136,7 +154,6 @@ export function estimateResourceCost(resource: DiscoveredAwsResource): Estimated
     }
 
     case "eip": {
-      // Unattached EIPs always incur $0.005/hr; AWS also bills public IPv4 at $0.005/hr.
       return {
         hourlyMicrocents: Number(EIP_HOURLY_MICROCENTS),
         monthlyCents: monthlyCentsFromHourlyMicrocents(EIP_HOURLY_MICROCENTS),
@@ -164,7 +181,6 @@ export function estimateResourceCost(resource: DiscoveredAwsResource): Estimated
       const multiAz = readBooleanMeta(metadata, "multiAz");
       const azMultiplier = multiAz ? 2n : 1n;
 
-      // Storage + provisioned IOPS are billed even while an RDS instance is stopped.
       const storageRate = RDS_STORAGE_MONTHLY_CENTS_PER_GB[storageType] ?? 12n;
       let storageMonthlyCents = allocatedGb * storageRate * azMultiplier;
 
@@ -211,6 +227,10 @@ export function estimateResourceCost(resource: DiscoveredAwsResource): Estimated
   }
 }
 
+export function estimateRdsRunningMonthlyCents(resource: DiscoveredAwsResource): number {
+  return estimateResourceCost({ ...resource, state: "available" }).monthlyCents;
+}
+
 export function estimateRdsIopsDowngradeSavingsCents(resource: DiscoveredAwsResource): number {
   const storageType = readStringMeta(resource.metadata, "storageType", "gp3");
   const iops = readNumberMeta(resource.metadata, "iops", 0);
@@ -230,6 +250,5 @@ export function estimateRdsMultiAzSavingsCents(resource: DiscoveredAwsResource):
   if (!readBooleanMeta(resource.metadata, "multiAz")) return 0;
   const full = estimateResourceCost(resource).monthlyCents;
   const iopsSavings = estimateRdsIopsDowngradeSavingsCents(resource);
-  // Avoid double-counting IOPS savings when both rules trigger on the same DB.
   return Math.max(0, Math.round((full - iopsSavings) / 2));
 }

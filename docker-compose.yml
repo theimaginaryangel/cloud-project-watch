@@ -4,15 +4,15 @@ services:
     container_name: cloudprojectwatch-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: cpw
-      POSTGRES_PASSWORD: cpw
-      POSTGRES_DB: cloudprojectwatch
+      POSTGRES_USER: ${POSTGRES_USER:-cpw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cpw}
+      POSTGRES_DB: ${POSTGRES_DB:-cloudprojectwatch}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - cpw_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cpw -d cloudprojectwatch"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-cpw} -d $${POSTGRES_DB:-cloudprojectwatch}"]
       interval: 5s
       timeout: 5s
       retries: 5

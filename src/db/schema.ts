@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -12,21 +13,26 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const awsConnections = pgTable("aws_connections", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull().default("Primary AWS"),
-  mode: text("mode", { enum: ["demo", "iam_keys", "env_default"] })
-    .notNull()
-    .default("demo"),
-  regions: text("regions")
-    .array()
-    .notNull()
-    .default(sql`ARRAY['us-east-1', 'us-east-2', 'us-west-2']::text[]`),
-  encryptedCredentials: text("encrypted_credentials"),
-  costExplorerEnabled: boolean("cost_explorer_enabled").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const awsConnections = pgTable(
+  "aws_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    singletonKey: text("singleton_key").notNull().default("primary"),
+    name: text("name").notNull().default("Primary AWS"),
+    mode: text("mode", { enum: ["demo", "iam_keys", "env_default"] })
+      .notNull()
+      .default("demo"),
+    regions: text("regions")
+      .array()
+      .notNull()
+      .default(sql`ARRAY['us-east-1', 'us-east-2', 'us-west-2']::text[]`),
+    encryptedCredentials: text("encrypted_credentials"),
+    costExplorerEnabled: boolean("cost_explorer_enabled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("aws_connections_singleton_uidx").on(table.singletonKey)],
+);
 
 export const aiProviderConfigs = pgTable(
   "ai_provider_configs",
@@ -132,6 +138,7 @@ export const awsResources = pgTable(
     scannedAt: timestamp("scanned_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("aws_resources_scan_project_idx").on(table.scanRunId, table.projectSlug),
     check("aws_resources_hourly_nonneg", sql`${table.hourlyMicrocents} >= 0`),
     check("aws_resources_monthly_nonneg", sql`${table.monthlyCents} >= 0`),
   ],
@@ -171,6 +178,7 @@ export const ruleFindings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("rule_findings_scan_project_idx").on(table.scanRunId, table.projectSlug),
     check("rule_findings_savings_nonneg", sql`${table.estimatedMonthlySavingsCents} >= 0`),
   ],
 );
@@ -210,11 +218,17 @@ export const costExplorerSyncs = pgTable(
     connectionId: uuid("connection_id")
       .notNull()
       .references(() => awsConnections.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "completed", "failed"] })
+      .notNull()
+      .default("completed"),
     periodStart: text("period_start").notNull(),
     periodEnd: text("period_end").notNull(),
     actualMtdCents: bigint("actual_mtd_cents", { mode: "number" }).notNull().default(0),
     byServiceJson: jsonb("by_service_json").$type<Record<string, number>>().notNull().default({}),
     syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [check("ce_syncs_actual_mtd_nonneg", sql`${table.actualMtdCents} >= 0`)],
+  (table) => [
+    index("ce_syncs_conn_synced_idx").on(table.connectionId, table.syncedAt),
+    check("ce_syncs_actual_mtd_nonneg", sql`${table.actualMtdCents} >= 0`),
+  ],
 );

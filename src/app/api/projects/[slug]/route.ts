@@ -1,35 +1,31 @@
 import { NextResponse } from "next/server";
-import { getDashboardData } from "@/lib/scans/orchestrator";
+import { getProjectDetailData } from "@/lib/scans/orchestrator";
+import {
+  enforceApiGuard,
+  safeDecodeUriSegment,
+  toErrorResponse,
+} from "@/lib/security/guards";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ slug: string }> },
 ) {
+  const blocked = await enforceApiGuard(request);
+  if (blocked) return blocked;
+
   try {
     const { slug } = await context.params;
-    const decodedSlug = decodeURIComponent(slug);
-    const data = await getDashboardData(true);
+    const decodedSlug = safeDecodeUriSegment(slug);
+    const detail = await getProjectDetailData(decodedSlug, true);
 
-    const project = data.projects.find((p) => p.slug === decodedSlug);
-    if (!project) {
+    if (!detail) {
       return NextResponse.json({ error: "Project not found in latest scan." }, { status: 404 });
     }
 
-    const resources = data.resources.filter((r) => r.projectSlug === decodedSlug);
-    const findings = data.findings.filter((f) => f.projectSlug === decodedSlug);
-
-    return NextResponse.json({
-      connection: data.connection,
-      latestScan: data.latestScan,
-      aiStatus: data.aiStatus,
-      project,
-      resources,
-      findings,
-    });
+    return NextResponse.json(detail);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load project.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to load project.");
   }
 }

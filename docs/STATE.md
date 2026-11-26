@@ -1,5 +1,14 @@
 # CloudProjectWatch State
 
-- **Status:** v1 Complete, Redesigned, Audited, and Published (`theimaginaryangel/cloud-project-watch`)
+- **Status:** v1.1 Hardened — Full Security & Concurrency Remediation Completed (`theimaginaryangel/cloud-project-watch`)
 - **Routes:** `/`, `/projects/[slug]`, `/untagged`, `/settings`
-- **Design:** Minimal monochrome frosted glass with subtle dark-grey hairlines and Option A semantic tokens (`#81C995`/`#137333` savings, `#F28B82`/`#C5221F` active leaks/RDS auto-restart).
+- **Security Posture:**
+  - Fail-closed `OWNER_PASSWORD` Basic Auth in production (`charset="UTF-8"` safe Base64 + SHA-256 constant-time compare + brute-force rate limiting)
+  - CSRF `Origin` / `Sec-Fetch-Site` + `Content-Type: application/json` enforcement on all mutating endpoints
+  - AES-256-GCM BYOK encryption rejecting known/weak keys + explicit `ALLOW_AMBIENT_AWS_CREDENTIALS` opt-in gate for `env_default`
+  - POSIX single-quote CLI escaping, HCL interpolation escaping, and strict Zod allowlist validation on AI-generated AWS CLI / Terraform snippets
+  - CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` headers
+- **Reliability & Data Invariants:**
+  - Singleton primary AWS connection (`aws_connections_singleton_uidx`) + resilient DB bootstrap promise recovery
+  - Stale `running` scan auto-expiration (`3m`) + exact per-resource savings cap + non-blocking Cost Explorer `PENDING` intent reservation (`24h` cooldown)
+  - Paginated AWS SDK v3 discovery + SQL-filtered project detail queries

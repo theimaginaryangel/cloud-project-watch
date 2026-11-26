@@ -4,21 +4,26 @@ import {
   getOrCreatePrimaryConnection,
   resolveAwsCredentialsFromConnection,
 } from "@/lib/scans/orchestrator";
-import { blockIfPublicDemoLocked } from "@/lib/security/guards";
+import {
+  AppError,
+  enforceApiGuard,
+  toErrorResponse,
+} from "@/lib/security/guards";
 
-export async function POST() {
-  const locked = blockIfPublicDemoLocked();
-  if (locked) return locked;
+export async function POST(request: Request) {
+  const blocked = await enforceApiGuard(request, {
+    mutation: true,
+    blockDemo: true,
+    rateLimit: { bucket: "cost_explorer", limit: 6, windowMs: 60_000 },
+  });
+  if (blocked) return blocked;
 
   try {
     const conn = await getOrCreatePrimaryConnection();
     if (conn.mode === "demo") {
-      return NextResponse.json(
-        {
-          error:
-            "Cost Explorer sync is only available in Live AWS mode. Demo Mode already computes instant $0 estimates.",
-        },
-        { status: 400 },
+      throw new AppError(
+        "Cost Explorer sync is only available in Live AWS mode. Demo Mode already computes instant $0 estimates.",
+        400,
       );
     }
 
@@ -30,7 +35,6 @@ export async function POST() {
 
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Cost Explorer sync failed.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return toErrorResponse(err, "Cost Explorer sync failed.");
   }
 }

@@ -2,17 +2,24 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureDbReady, projectRules } from "@/db";
-import { humanizeProjectLabel, slugifyProject } from "@/lib/domain/types";
+import {
+  ORPHANED_PROJECT_SLUG,
+  humanizeProjectLabel,
+  slugifyProject,
+} from "@/lib/domain/types";
 import { getOrCreatePrimaryConnection, triggerScan } from "@/lib/scans/orchestrator";
 import {
-  blockIfPublicDemoLocked,
+  AppError,
+  enforceApiGuard,
   isStatelessDemoMode,
+  parseJsonBody,
+  toErrorResponse,
 } from "@/lib/security/guards";
 
 const CreateRuleSchema = z.object({
   ruleType: z.enum(["arn_override", "tag_key", "name_prefix"]),
-  pattern: z.string().min(1).max(300),
-  projectLabel: z.string().min(1).max(80),
+  pattern: z.string().trim().min(1).max(300),
+  projectLabel: z.string().trim().min(1).max(80),
   rescanAfterSave: z.boolean().optional(),
 });
 
@@ -20,7 +27,10 @@ const DeleteRuleSchema = z.object({
   id: z.string().uuid(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const blocked = await enforceApiGuard(request);
+  if (blocked) return blocked;
+
   if (isStatelessDemoMode()) {
     return NextResponse.json({ rules: [] });
   }
@@ -35,30 +45,35 @@ export async function GET() {
       .limit(200);
     return NextResponse.json({ rules });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load rules.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to load rules.");
   }
 }
 
 export async function POST(request: Request) {
-  const locked = blockIfPublicDemoLocked();
-  if (locked) return locked;
+  const blocked = await enforceApiGuard(request, {
+    mutation: true,
+    blockDemo: true,
+    rateLimit: { bucket: "rules", limit: 30, windowMs: 60_000 },
+  });
+  if (blocked) return blocked;
 
   try {
-    const body: unknown = await request.json();
-    const parsed = CreateRuleSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid rule payload." }, { status: 400 });
+    const parsed = await parseJsonBody(request, CreateRuleSchema, {
+      invalidMessage: "Invalid rule payload.",
+    });
+
+    const projectLabel = humanizeProjectLabel(parsed.projectLabel);
+    const projectSlug = slugifyProject(projectLabel);
+    if (projectSlug === ORPHANED_PROJECT_SLUG) {
+      throw new AppError("Choose a valid project name.", 400);
     }
 
     const db = await ensureDbReady();
     const conn = await getOrCreatePrimaryConnection();
-    const projectLabel = humanizeProjectLabel(parsed.data.projectLabel);
-    const projectSlug = slugifyProject(projectLabel);
     const priority =
-      parsed.data.ruleType === "arn_override"
+      parsed.ruleType === "arn_override"
         ? 10
-        : parsed.data.ruleType === "tag_key"
+        : parsed.ruleType === "tag_key"
           ? 50
           : 100;
 
@@ -66,8 +81,8 @@ export async function POST(request: Request) {
       .insert(projectRules)
       .values({
         connectionId: conn.id,
-        ruleType: parsed.data.ruleType,
-        pattern: parsed.data.pattern.trim(),
+        ruleType: parsed.ruleType,
+        pattern: parsed.pattern,
         projectSlug,
         projectLabel,
         priority,
@@ -78,7 +93,7 @@ export async function POST(request: Request) {
       })
       .returning();
 
-    if (parsed.data.rescanAfterSave) {
+    if (parsed.rescanAfterSave) {
       await triggerScan({
         connectionId: conn.id,
         idempotencyKey: `rule-rescan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -87,33 +102,33 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ rule: saved }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to save rule.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to save rule.");
   }
 }
 
 export async function DELETE(request: Request) {
-  const locked = blockIfPublicDemoLocked();
-  if (locked) return locked;
+  const blocked = await enforceApiGuard(request, {
+    mutation: true,
+    blockDemo: true,
+    rateLimit: { bucket: "rules", limit: 30, windowMs: 60_000 },
+  });
+  if (blocked) return blocked;
 
   try {
-    const body: unknown = await request.json();
-    const parsed = DeleteRuleSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Valid rule id is required." }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, DeleteRuleSchema, {
+      invalidMessage: "Valid rule id is required.",
+    });
 
     const db = await ensureDbReady();
     const conn = await getOrCreatePrimaryConnection();
     await db
       .delete(projectRules)
       .where(
-        and(eq(projectRules.id, parsed.data.id), eq(projectRules.connectionId, conn.id)),
+        and(eq(projectRules.id, parsed.id), eq(projectRules.connectionId, conn.id)),
       );
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete rule.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return toErrorResponse(err, "Failed to delete rule.");
   }
 }

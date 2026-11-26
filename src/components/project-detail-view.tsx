@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -70,6 +70,17 @@ const SOURCE_LABELS: Record<string, string> = {
   orphaned: "Untagged",
 };
 
+async function fetchProjectDetailPayload(slug: string): Promise<ProjectDetailPayload> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(slug)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Project not found.");
+  }
+  return (await res.json()) as ProjectDetailPayload;
+}
+
 export function ProjectDetailView({ slug }: { slug: string }) {
   const [data, setData] = useState<ProjectDetailPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,29 +91,26 @@ export function ProjectDetailView({ slug }: { slug: string }) {
   const [advising, setAdvising] = useState(false);
   const adviseLockRef = useRef(false);
 
-  const loadProject = useCallback(async () => {
-    try {
-      setError(null);
-      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Project not found.");
-      }
-      const payload = (await res.json()) as ProjectDetailPayload;
-      setData(payload);
-      setProvider(payload.aiStatus.defaultProvider);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load project.");
-    } finally {
-      setLoading(false);
-    }
-  }, [slug]);
-
   useEffect(() => {
-    void loadProject();
-  }, [loadProject]);
+    let cancelled = false;
+    fetchProjectDetailPayload(slug)
+      .then((payload) => {
+        if (cancelled) return;
+        setData(payload);
+        setProvider(payload.aiStatus.defaultProvider);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Could not load project.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   async function handleGeneratePlan(forceRefresh = false) {
     if (adviseLockRef.current) return;

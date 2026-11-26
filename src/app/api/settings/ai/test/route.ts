@@ -3,29 +3,35 @@ import { z } from "zod";
 import { resolveAiCredentials } from "@/lib/ai/advisor";
 import { verifyGeminiApiKey } from "@/lib/ai/providers/gemini";
 import { verifyGroqApiKey } from "@/lib/ai/providers/groq";
-import { blockIfPublicDemoLocked } from "@/lib/security/guards";
+import {
+  enforceApiGuard,
+  parseJsonBody,
+  sanitizeErrorMessage,
+} from "@/lib/security/guards";
 
 const TestAiSchema = z.object({
   provider: z.enum(["gemini", "groq"]),
-  apiKey: z.string().trim().optional(),
-  modelId: z.string().trim().optional(),
+  apiKey: z.string().trim().max(512).optional(),
+  modelId: z.string().trim().max(100).optional(),
 });
 
 export async function POST(request: Request) {
-  const locked = blockIfPublicDemoLocked();
-  if (locked) return locked;
+  const blocked = await enforceApiGuard(request, {
+    mutation: true,
+    blockDemo: true,
+    rateLimit: { bucket: "test_ai", limit: 10, windowMs: 60_000 },
+  });
+  if (blocked) return blocked;
 
   try {
-    const body: unknown = await request.json();
-    const parsed = TestAiSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid AI test request." }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, TestAiSchema, {
+      invalidMessage: "Invalid AI test request.",
+    });
 
     const creds = await resolveAiCredentials();
 
-    if (parsed.data.provider === "gemini") {
-      const key = parsed.data.apiKey || creds.gemini?.apiKey;
+    if (parsed.provider === "gemini") {
+      const key = parsed.apiKey || creds.gemini?.apiKey;
       if (!key) {
         return NextResponse.json(
           { ok: false, error: "Enter a Gemini API key first." },
@@ -34,12 +40,12 @@ export async function POST(request: Request) {
       }
       const result = await verifyGeminiApiKey(
         key,
-        parsed.data.modelId || creds.gemini?.modelId,
+        parsed.modelId || creds.gemini?.modelId,
       );
       return NextResponse.json(result, { status: result.ok ? 200 : 400 });
     }
 
-    const key = parsed.data.apiKey || creds.groq?.apiKey;
+    const key = parsed.apiKey || creds.groq?.apiKey;
     if (!key) {
       return NextResponse.json(
         { ok: false, error: "Enter a Groq API key first." },
@@ -48,11 +54,11 @@ export async function POST(request: Request) {
     }
     const result = await verifyGroqApiKey(
       key,
-      parsed.data.modelId || creds.groq?.modelId,
+      parsed.modelId || creds.groq?.modelId,
     );
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "AI key verification failed.";
+    const { message } = sanitizeErrorMessage(err, "AI key verification failed.");
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 }

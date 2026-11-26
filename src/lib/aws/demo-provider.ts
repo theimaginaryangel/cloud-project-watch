@@ -1,13 +1,15 @@
-import {
-  ORPHANED_PROJECT_LABEL,
-  ORPHANED_PROJECT_SLUG,
-  type AwsService,
-  type CostRecommendationPlan,
-  type DiscoveredAwsResource,
+import type {
+  CostRecommendationPlan,
+  DiscoveredAwsResource,
 } from "@/lib/domain/types";
 import { groupAndPriceResources } from "@/lib/grouping/project-grouper";
 import { evaluateCostRules } from "@/lib/rules/cost-rules";
-import type { DashboardPayload, ProjectSummaryDto } from "@/lib/scans/orchestrator";
+import {
+  aggregateScanSnapshot,
+  type DashboardFindingDto,
+  type DashboardPayload,
+  type DashboardResourceDto,
+} from "@/lib/scans/orchestrator";
 
 export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResource[] {
   const fiveDaysAgoIso = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
@@ -28,7 +30,6 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
   });
 
   return [
-    // --- CloudPress (Live portfolio app burning way too much) ---
     {
       arn: "arn:aws:rds:us-east-1:123456789012:db:cloudpress-db",
       resourceId: "cloudpress-db",
@@ -64,7 +65,7 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
       name: "cloudpress-web-root",
       state: "in-use",
       parentResourceId: "i-0a1b2c3d4e5f00001",
-      tags: {}, // Intentionally untagged to demonstrate parent-attachment inheritance!
+      tags: {},
       metadata: { sizeGb: 30, volumeType: "gp3", iops: 3000 },
     },
     {
@@ -79,7 +80,6 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
     },
     ...cloudpressSecrets,
 
-    // --- Kaluna (Serverless ticketing + forgotten staging DB & NAT) ---
     {
       arn: "arn:aws:rds:us-east-1:123456789012:db:kaluna-staging-db",
       resourceId: "kaluna-staging-db",
@@ -109,7 +109,6 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
       metadata: { subnetId: "subnet-0a1b2c3d", connectivityType: "public" },
     },
 
-    // --- BankGuard (Matched via CloudFormation stack tag & name prefix) ---
     {
       arn: "arn:aws:ec2:us-east-2:123456789012:instance/i-0bankguard001",
       resourceId: "i-0bankguard001",
@@ -138,7 +137,6 @@ export function getDemoAwsResources(now: Date = new Date()): DiscoveredAwsResour
       },
     },
 
-    // --- Untagged / Idle Resources (Leftovers from incomplete Terraform deploys) ---
     {
       arn: "arn:aws:ec2:us-east-1:123456789012:eip-allocation/eipalloc-0zmb0001",
       resourceId: "eipalloc-0zmb0001",
@@ -238,7 +236,7 @@ export function getDemoRecommendations(
           explanation:
             "Secrets Manager charges $0.40/secret/month even when automatic rotation is off. SSM Standard SecureString parameters are $0.00/month forever.",
           cliCommand:
-            'aws ssm put-parameter --region us-east-1 --name "/cloudpress/prod/config-01" --type SecureString --value "<VALUE>" --overwrite',
+            "aws ssm put-parameter --region us-east-1 --name '/cloudpress/prod/config-01' --type SecureString --value 'REPLACE_ME' --overwrite",
           terraformSnippet: `resource "aws_ssm_parameter" "config" {\n  name  = "/cloudpress/prod/config-01"\n  type  = "SecureString"\n  tier  = "Standard"\n  value = var.config_value\n}`,
         },
       ],
@@ -250,12 +248,12 @@ export function getDemoRecommendations(
       summary:
         "Prevent Kaluna's stopped staging database from auto-restarting in 48 hours and eliminate the $32.85/mo NAT Gateway baseline charge without taking the public ticketing demo offline.",
       keepsAppLive: true,
-      totalEstimatedMonthlySavingsCents: 7_885,
+      totalEstimatedMonthlySavingsCents: 8_549,
       actions: [
         {
           title: "Snapshot and delete stopped kaluna-staging-db before 7-day auto-restart",
           targetResourceId: "kaluna-staging-db",
-          estimatedMonthlySavingsCents: 4_900,
+          estimatedMonthlySavingsCents: 5_564,
           riskLevel: "low",
           downtimeImpact: "zero_downtime",
           keepsAppLive: true,
@@ -275,7 +273,7 @@ export function getDemoRecommendations(
           explanation:
             "A managed NAT Gateway costs $32.85/mo idle. Moving serverless egress to public subnets or a $3/mo t4g.nano NAT instance saves ~$30/mo.",
           cliCommand:
-            "aws ec2 describe-route-tables --region us-east-1 --filters Name=route.nat-gateway-id,Values=nat-0kaluna998877",
+            "aws ec2 describe-route-tables --region us-east-1 --filters 'Name=route.nat-gateway-id,Values=nat-0kaluna998877'",
           terraformSnippet: `resource "aws_vpc_endpoint" "s3" {\n  vpc_id            = aws_vpc.kaluna.id\n  service_name      = "com.amazonaws.us-east-1.s3"\n  vpc_endpoint_type = "Gateway"\n}`,
         },
       ],
@@ -311,7 +309,7 @@ export function getDemoRecommendations(
         explanation:
           "This 100 GB EBS volume is in 'available' state (not mounted to any EC2 instance). Snapshot it for safety and delete the volume to save $10.00/mo.",
         cliCommand:
-          'aws ec2 create-snapshot --region us-east-1 --volume-id vol-0orphan100gb --description "orphan-backup" && aws ec2 delete-volume --region us-east-1 --volume-id vol-0orphan100gb',
+          "aws ec2 create-snapshot --region us-east-1 --volume-id vol-0orphan100gb --description 'orphan-backup' && aws ec2 delete-volume --region us-east-1 --volume-id vol-0orphan100gb",
         terraformSnippet: `ebs_block_device {\n  delete_on_termination = true\n}`,
       },
     ],
@@ -321,74 +319,26 @@ export function getDemoRecommendations(
 export function buildStatelessDemoDashboard(now: Date = new Date()): DashboardPayload {
   const discovered = getDemoAwsResources(now);
   const priced = groupAndPriceResources(discovered, []);
-  const findings = evaluateCostRules(priced, now);
+  const computedFindings = evaluateCostRules(priced, now);
 
-  const totalMonthlyCents = priced.reduce((sum, r) => sum + r.monthlyCents, 0);
-  const potentialSavingsCents = findings.reduce(
-    (sum, f) => sum + f.estimatedMonthlySavingsCents,
-    0,
-  );
+  const resources: DashboardResourceDto[] = priced.map((r, idx) => ({
+    id: `demo-res-${idx}`,
+    arn: r.arn,
+    resourceId: r.resourceId,
+    service: r.service,
+    region: r.region,
+    name: r.name,
+    state: r.state,
+    projectSlug: r.projectSlug,
+    projectLabel: r.projectLabel,
+    projectSource: r.projectSource,
+    hourlyMicrocents: r.hourlyMicrocents,
+    monthlyCents: r.monthlyCents,
+    tags: r.tags,
+    metadata: r.metadata,
+  }));
 
-  const bucketMap = new Map<
-    string,
-    {
-      slug: string;
-      label: string;
-      resourceCount: number;
-      monthlyCents: number;
-      potentialSavingsCents: number;
-      findingCount: number;
-      criticalCount: number;
-      services: Set<AwsService>;
-    }
-  >();
-
-  for (const r of priced) {
-    const existing = bucketMap.get(r.projectSlug) ?? {
-      slug: r.projectSlug,
-      label:
-        r.projectSlug === ORPHANED_PROJECT_SLUG ? ORPHANED_PROJECT_LABEL : r.projectLabel,
-      resourceCount: 0,
-      monthlyCents: 0,
-      potentialSavingsCents: 0,
-      findingCount: 0,
-      criticalCount: 0,
-      services: new Set<AwsService>(),
-    };
-    existing.resourceCount += 1;
-    existing.monthlyCents += r.monthlyCents;
-    existing.services.add(r.service);
-    bucketMap.set(r.projectSlug, existing);
-  }
-
-  for (const f of findings) {
-    const existing = bucketMap.get(f.projectSlug);
-    if (existing) {
-      existing.findingCount += 1;
-      existing.potentialSavingsCents += f.estimatedMonthlySavingsCents;
-      if (f.severity === "critical") existing.criticalCount += 1;
-    }
-  }
-
-  const projects: ProjectSummaryDto[] = [...bucketMap.values()]
-    .map((b) => ({
-      slug: b.slug,
-      label: b.label,
-      isOrphaned: b.slug === ORPHANED_PROJECT_SLUG,
-      resourceCount: b.resourceCount,
-      monthlyCents: b.monthlyCents,
-      potentialSavingsCents: b.potentialSavingsCents,
-      findingCount: b.findingCount,
-      criticalCount: b.criticalCount,
-      services: [...b.services],
-    }))
-    .sort((a, b) => {
-      if (a.isOrphaned && !b.isOrphaned) return -1;
-      if (!a.isOrphaned && b.isOrphaned) return 1;
-      return b.monthlyCents - a.monthlyCents;
-    });
-
-  const mappedFindings = findings.map((f, idx) => ({
+  const findings: DashboardFindingDto[] = computedFindings.map((f, idx) => ({
     id: `demo-finding-${idx}`,
     resourceId: f.resourceId,
     resourceArn: f.resourceArn,
@@ -403,27 +353,8 @@ export function buildStatelessDemoDashboard(now: Date = new Date()): DashboardPa
     keepsAppLive: f.keepsAppLive,
   }));
 
-  const urgentAlerts = mappedFindings
-    .filter(
-      (f) =>
-        f.severity === "critical" ||
-        f.ruleCode === "RDS_7DAY_AUTORESTART" ||
-        f.ruleCode === "UNATTACHED_EIP" ||
-        f.ruleCode === "ORPHANED_EBS",
-    )
-    .sort((a, b) => b.estimatedMonthlySavingsCents - a.estimatedMonthlySavingsCents)
-    .slice(0, 6)
-    .map((f) => ({
-      id: f.id,
-      projectSlug: f.projectSlug,
-      resourceId: f.resourceId,
-      ruleCode: f.ruleCode,
-      severity: f.severity,
-      title: f.title,
-      description: f.description,
-      estimatedMonthlySavingsCents: f.estimatedMonthlySavingsCents,
-      cliCommand: f.cliCommand,
-    }));
+  const { projects, urgentAlerts, totalMonthlyCents, potentialSavingsCents } =
+    aggregateScanSnapshot(resources, findings);
 
   const isoNow = now.toISOString();
 
@@ -446,23 +377,8 @@ export function buildStatelessDemoDashboard(now: Date = new Date()): DashboardPa
     },
     projects,
     urgentAlerts,
-    findings: mappedFindings,
-    resources: priced.map((r, idx) => ({
-      id: `demo-res-${idx}`,
-      arn: r.arn,
-      resourceId: r.resourceId,
-      service: r.service,
-      region: r.region,
-      name: r.name,
-      state: r.state,
-      projectSlug: r.projectSlug,
-      projectLabel: r.projectLabel,
-      projectSource: r.projectSource,
-      hourlyMicrocents: r.hourlyMicrocents,
-      monthlyCents: r.monthlyCents,
-      tags: r.tags,
-      metadata: r.metadata,
-    })),
+    findings,
+    resources,
     costExplorer: null,
     aiStatus: {
       geminiConfigured: false,

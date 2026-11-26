@@ -1,9 +1,10 @@
 "use client";
 
-import { FolderKanban, Layers, SlidersHorizontal } from "lucide-react";
+import { CircleHelp, FolderKanban, Layers, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -58,10 +59,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          <div className="flex items-center gap-2">
-            <span className="hidden md:inline text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <span className="hidden md:inline text-xs text-muted-foreground mr-1">
               Read-only
             </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              asChild
+              aria-label="How to use CloudProjectWatch"
+              className="press-feedback"
+            >
+              <Link href="/guide">
+                <CircleHelp className="size-4" />
+              </Link>
+            </Button>
             <ThemeToggle />
           </div>
         </div>
